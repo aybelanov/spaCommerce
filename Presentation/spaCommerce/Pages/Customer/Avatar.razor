@@ -1,0 +1,142 @@
+﻿@page "/customer/avatar"
+@layout _ColumnsTwo
+@inject IJSService jsService
+@inject IWorkContext workContext
+@inject NavigationManager uriHelper
+@inject CustomerSettings customerSettings
+@inject ICustomerModelFactory customerModelFactory
+@inject Nop.Services.Media.IPictureService pictureService
+@inject IGenericAttributeService genericAttributeService
+@inject Nop.Core.Domain.Media.MediaSettings mediaSettings
+@inject ILocalizationService localizationService
+@inject Nop.Services.Media.IDownloadService downloadService
+@inject IJSRuntime jsRuntime
+@attribute [Authorize]
+
+@code{
+
+    private CustomerAvatarModel Model { get; set; }
+    private ElementReference uploadRef;
+
+    public RenderFragment LeftSection { get; set; } = builder =>
+    {
+        builder.OpenComponent<CustomerNavigation>(0);
+        builder.AddAttribute(1, "SelectedTabId", (int)CustomerNavigationEnum.Addresses);
+        builder.CloseComponent();
+    };
+
+
+    protected override async Task DataRequest()
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!customerSettings.AllowCustomersToUploadAvatars)
+        {
+            await jsService.DisplayBarNotification(new[] { "Avatar Upload is denied" }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerInfo"));
+            return;
+        }
+
+        Model = new CustomerAvatarModel();
+        Model = customerModelFactory.PrepareCustomerAvatarModel(Model);
+    }
+
+
+    [JSInvokable]
+    public async Task UploadAvatar(JsonElement data)
+    {
+        if (data.TryGetProperty("result", out JsonElement result))
+        {
+            if (result.GetString() == "error")
+                await jsService.DisplayBarNotification(new[] { data.GetProperty("message").GetString() }, JSMessageType.Error);
+
+            if (result.GetString() == "success" && data.TryGetProperty("avatarurl", out JsonElement url))
+                Model.AvatarUrl = url.GetString();
+        }
+
+        StateHasChanged();
+    }
+
+
+    private async Task RemoveAvatar(MouseEventArgs e)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!customerSettings.AllowCustomersToUploadAvatars)
+        {
+            await jsService.DisplayBarNotification(new[] { "Avatar Upload is denied" }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerInfo"));
+            return;
+        }
+
+        var customer = workContext.CurrentCustomer;
+
+        var customerAvatar = pictureService.GetPictureById(genericAttributeService.GetAttribute<int>(customer, NopCustomerDefaults.AvatarPictureIdAttribute));
+        if (customerAvatar != null)
+            pictureService.DeletePicture(customerAvatar);
+        genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.AvatarPictureIdAttribute, 0);
+
+        Model.AvatarUrl = string.Empty;
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("Avatar.UploadAvatar", DotNetObjectReference.Create(this), uploadRef, Url.RouteUrl("CustomerAvatarUpload"));
+        }
+        catch { }
+    }
+}
+
+<div class="page account-page avatar-page">
+    <div class="page-title">
+        <h1>@T("Account.MyAccount") - @T("Account.Avatar")</h1>
+    </div>
+    <div class="page-body">
+        @if (needStub)
+        {
+            <LoadingStub />
+        }
+        else if (Model != null)
+        {
+            //title
+            Html.AddTitleParts(T("PageTitle.Account").Text);
+            //page class
+            Html.AppendPageCssClassParts("html-account-page");
+            Html.AppendPageCssClassParts("html-avatar-page");
+
+
+            <div class="fieldset">
+                @if (!string.IsNullOrEmpty(Model.AvatarUrl))
+                {
+                    <div class="image">
+                        <img src="@(Model.AvatarUrl)" alt="avatar" />
+                    </div>
+                }
+                <input name="uploadedFile" type="file" @ref="uploadRef" accept="image/*" />
+            </div>
+            <div class="buttons">
+                @*<input type="submit" name="upload-avatar" @onclick="UploadAvatar" class="button-1 upload-avatar-button" value="@T("Common.Upload")" />*@
+                @if (!string.IsNullOrEmpty(Model.AvatarUrl))
+                {
+                    <input type="button" name="remove-avatar" @onclick="RemoveAvatar" class="button-2 remove-avatar-button" value="@T("Account.Avatar.RemoveAvatar")" />
+                }
+            </div>
+            <div class="info">
+                @T("Account.Avatar.UploadRules")
+            </div>
+        }
+    </div>
+</div>

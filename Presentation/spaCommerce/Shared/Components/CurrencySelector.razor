@@ -1,0 +1,61 @@
+﻿@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Mvc.Rendering
+@using System.Net
+@using Nop.Core
+@using Nop.Services.Directory
+@using Nop.Core.Domain.Directory
+@inject ICommonModelFactory factory
+@inject IHttpContextAccessor httpContextAccessor
+@inject NavigationManager uriHelper
+@inject IWorkContext workContext
+@inject ICurrencyService currencyService
+
+@code{
+
+    public CurrencySelectorModel Model;
+
+
+    protected override Task DataRequest()
+    {
+        Model = factory.PrepareCurrencySelectorModel();
+        return Task.CompletedTask;
+    }
+
+
+    private void CurrenyOnChange(ChangeEventArgs args)
+    {
+        var customerCurrency = int.Parse(args.Value.ToString());
+        var currency = currencyService.GetCurrencyById(customerCurrency);
+
+        if (currency != null)
+            workContext.WorkingCurrency = currency;
+
+        CommonParams.OnCurrencyChanged(this);
+    }
+}
+
+
+@if (needStub && Model == null)
+{
+    <LoadingStub></LoadingStub>
+}
+else if (Model != null && Model.AvailableCurrencies.Count > 1)
+{
+    <div class="currency-selector">
+        @{
+            var currencies = Model.AvailableCurrencies.Select(x => new SelectListItem
+            {
+                Text = x.Name,
+                Value = x.Id.ToString(),
+                Selected = x.Id.Equals(Model.CurrentCurrencyId)
+            });
+
+            <select id="customerCurrency" name="customerCurrency" @bind-value="@Model.CurrentCurrencyId" @bind-value:event="oninput"  @onchange="@CurrenyOnChange" aria-label="@T("Currency.Selector.Label")">
+                @foreach (var currency in currencies)
+                {
+                    <option selected="@currency.Selected" value="@currency.Value">@currency.Text</option>
+                }
+            </select>
+        }
+    </div>
+}

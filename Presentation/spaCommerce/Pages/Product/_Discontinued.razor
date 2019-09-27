@@ -1,0 +1,11 @@
+﻿
+@code{
+    [Parameter] public ProductDetailsModel Model { get; set; }
+}
+
+@if (Model.DisplayDiscontinuedMessage)
+{
+    <div class="discontinued-product">
+        <h4>@T("Products.Discontinued")</h4>
+    </div>
+}

@@ -1,0 +1,159 @@
+﻿@page "/checkout/paymentinfo"
+
+@layout _ColumnsOne
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject ICheckoutModelFactory checkoutModelFactory
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IPaymentService paymentService
+@inject IOrderProcessingService orderProcessingService
+@inject Nop.Core.Domain.Payments.PaymentSettings paymentSettings
+
+@code
+{
+    private CheckoutPaymentInfoModel Model { get; set; }
+    private PaymentInfoOnValidSubmit paymentFormOnValidSubmit;
+
+
+    protected override Task OnInitializedAsync()
+    {
+        paymentFormOnValidSubmit = OnValidSubmit;
+        return Task.CompletedTask;
+    }
+
+
+    protected override async Task DataRequest()
+    {
+        await ValidationEnsure();
+
+        //load payment method
+        var paymentMethodSystemName = genericAttributeService.GetAttribute<string>(workContext.CurrentCustomer,
+            NopCustomerDefaults.SelectedPaymentMethodAttribute, storeContext.CurrentStore.Id);
+        var paymentMethod = paymentService.LoadPaymentMethodBySystemName(paymentMethodSystemName);
+        if (paymentMethod == null)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentMethod"));
+            return;
+        }
+
+        //Check whether payment info should be skipped
+        if (paymentMethod.SkipPaymentInfo ||
+            (paymentMethod.PaymentMethodType == PaymentMethodType.Redirection && paymentSettings.SkipPaymentInfoStepForRedirectionPaymentMethods))
+        {
+            //skip payment info page
+            var paymentInfo = new ProcessPaymentRequest();
+
+            //session save
+            CommonParams.ProcessPaymentRequest = paymentInfo;
+
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutConfirm"));
+        }
+
+        Model  = checkoutModelFactory.PreparePaymentInfoModel(paymentMethod);
+    }
+
+
+    private async Task OnValidSubmit(ProcessPaymentRequest paymentInfo)
+    {
+        await ValidationEnsure();
+
+        //load payment method
+        var paymentMethodSystemName = genericAttributeService.GetAttribute<string>(workContext.CurrentCustomer,
+            NopCustomerDefaults.SelectedPaymentMethodAttribute, storeContext.CurrentStore.Id);
+        var paymentMethod = paymentService.LoadPaymentMethodBySystemName(paymentMethodSystemName);
+        if (paymentMethod == null)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentMethod"));
+            return;
+        }
+
+        CommonParams.ProcessPaymentRequest = paymentInfo;
+        uriHelper.NavigateTo(Url.RouteUrl("CheckoutConfirm"));
+    }
+
+    private async Task ValidationEnsure()
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+
+        //Check whether payment workflow is required
+        var isPaymentWorkflowRequired = orderProcessingService.IsPaymentWorkflowRequired(cart);
+        if (!isPaymentWorkflowRequired)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutConfirm"));
+            return;
+        }
+
+    }
+}
+
+<div class="page checkout-page payment-info-page">
+    <CheckoutProgress Step="CheckoutProgressStep.Payment" />
+    <div class="page-title">
+        <h1>@T("Checkout.PaymentInfo")</h1>
+    </div>
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Checkout").Text);
+        //page class
+        Html.AppendPageCssClassParts("html-checkout-page");
+        Html.AppendPageCssClassParts("html-payment-info-page");
+
+        <div class="page-body checkout-data">
+            <Widget WidgetZone="@PublicWidgetZones.CheckoutPaymentInfoTop" />
+            <div class="section payment-info">
+                @RenderComponent(Model.PaymentViewComponentType, new { PaymentFormOnValidSubmit=paymentFormOnValidSubmit })
+
+                @*<EditForm method="post">
+                        <div asp-validation-summary="ModelOnly" class="message-error"></div>
+                        <div class="info">
+                            @RenderComponent(Model.PaymentViewComponentType)
+                        </div>
+                        <div class="buttons">
+                            <input type="submit" name="nextstep" value="@T("Checkout.NextButton")" class="button-1 payment-info-next-step-button" />
+                        </div>
+                    </EditForm>*@
+            </div>
+            <Widget WidgetZone="@PublicWidgetZones.CheckoutPaymentInfoBottom" />
+            <div class="section order-summary">
+                <div class="title">
+                    <strong>@T("Checkout.OrderSummary")</strong>
+                </div>
+                <OrderSummary />
+            </div>
+        </div>
+    }
+</div>

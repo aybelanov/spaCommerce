@@ -1,0 +1,48 @@
+﻿@functions{
+    [Parameter] public IList<ProductSpecificationModel> Model { get; set; }
+}
+
+
+@if (Model.Count > 0)
+{
+    <div class="product-specs-box">
+        <div class="title">
+            <strong>@T("Products.Specs")</strong>
+        </div>
+        <div class="table-wrapper">
+            <table class="data-table">
+                <colgroup>
+                    <col width="25%" />
+                    <col />
+                </colgroup>
+                <tbody>
+                    @{
+                        var i = 0;
+                        foreach (var specGroup in Model.GroupBy(x => x.SpecificationAttributeName))
+                        {
+                            <tr class="@(i % 2 == 0 ? "odd" : "even")">
+                                <td class="spec-name">
+                                    @specGroup.Key
+                                </td>
+                                <td class="spec-value">
+                                    @if (string.IsNullOrEmpty(specGroup.First().ColorSquaresRgb))
+                                    {
+                                        @((MarkupString)string.Join(", ", specGroup.Select(x=>x.ValueRaw)))
+                                    }
+                                    else
+                                    {
+                                        <div class="attribute-squares color-squares">
+                                            <span class="attribute-square-container" title="@((MarkupString)specGroup.First().ValueRaw)">
+                                                <span class="attribute-square" style="background-color: @(specGroup.First().ColorSquaresRgb);">&nbsp;</span>
+                                            </span>
+                                        </div>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    }
+                </tbody>
+            </table>
+        </div>
+    </div>
+}

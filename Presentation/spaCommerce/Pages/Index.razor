@@ -1,0 +1,19 @@
+﻿@page "/"
+
+<div class="page home-page">
+    <div class="page-body">
+        <Widget WidgetZone="@PublicWidgetZones.HomePageTop" />
+        <Widget WidgetZone="@PublicWidgetZones.HomePageBeforeProducts" />
+        <HomepageProducts />
+        <Widget WidgetZone="@PublicWidgetZones.HomePageBeforeBestSellers" />
+        <HomepageBestSellers />
+        <TopicBlock SystemName="HomePageText" />
+        <Widget WidgetZone="@PublicWidgetZones.HomePageBeforeCategories" />
+        <HomepageCategories />
+        <Widget WidgetZone="@PublicWidgetZones.HomePageBeforeNews" />
+        <HomePageNews />
+        <Widget WidgetZone="@PublicWidgetZones.HomePageBeforePoll" />
+        <HomepagePolls />
+        <Widget WidgetZone="@PublicWidgetZones.HomePageBottom" />
+    </div>
+</div>

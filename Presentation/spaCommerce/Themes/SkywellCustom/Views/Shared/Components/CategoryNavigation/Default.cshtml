@@ -1,0 +1,36 @@
+﻿@model CategoryNavigationModel
+@if (Model.Categories.Count > 0)
+{
+    <div class="block block-category-navigation">
+        <div class="title">
+            <strong>@T("Categories")</strong>
+        </div>
+        <div class="listbox">
+            <ul class="list top-menu-cat" id="nav">
+                @foreach (var category in Model.Categories)
+                {
+                    var categoryLineModel = new CategoryNavigationModel.CategoryLineModel
+                    {
+                        CurrentCategoryId = Model.CurrentCategoryId,
+                        Category = category
+                    };
+                    @await Html.PartialAsync("_CategoryLine.Navigation", categoryLineModel)
+                }
+            </ul>
+        </div>
+    </div>
+    <style>
+        .block-category-navigation .inactive ul {
+            display: none;
+        }
+    </style>
+    <script type="text/javascript">
+        $(document).ready(function () {
+            $('.top-menu-cat .sublist-toggle-cat').click(function (e) {
+                $(this).siblings('.sublist-cat').slideToggle(100);
+                if ($(this).html() === "\u25bd") { $(this).html("\u25b7") }
+                else $(this).html("\u25bd");
+            });
+        });
+    </script>
+}

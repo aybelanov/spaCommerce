@@ -1,0 +1,107 @@
+﻿@page "/checkout"
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject CustomerSettings customerSettings
+@inject IPaymentService paymentService
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IShoppingCartService shoppingCartService
+
+@code {
+
+    protected override async Task OnInitializedAsync()
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var downloadableProductsRequireRegistration =
+            customerSettings.RequireRegistrationForDownloadableProducts && cart.Any(sci => sci.Product.IsDownload);
+
+        if (workContext.CurrentCustomer.IsGuest() && (!orderSettings.AnonymousCheckoutAllowed || downloadableProductsRequireRegistration))
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //if we have only "button" payment methods available (displayed onthe shopping cart page, not during checkout),
+        //then we should allow standard checkout
+        //all payment methods (do not filter by country here as it could be not specified yet)
+        var paymentMethods = paymentService
+            .LoadActivePaymentMethods(workContext.CurrentCustomer, storeContext.CurrentStore.Id)
+            .Where(pm => !pm.HidePaymentMethod(cart))
+            .ToList();
+        //payment methods displayed during checkout (not with "Button" type)
+        var nonButtonPaymentMethods = paymentMethods
+            .Where(pm => pm.PaymentMethodType != PaymentMethodType.Button)
+            .ToList();
+        //"button" payment methods(*displayed on the shopping cart page)
+        var buttonPaymentMethods = paymentMethods
+            .Where(pm => pm.PaymentMethodType == PaymentMethodType.Button)
+            .ToList();
+        if (!nonButtonPaymentMethods.Any() && buttonPaymentMethods.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        //reset checkout data
+        customerService.ResetCheckoutData(workContext.CurrentCustomer, storeContext.CurrentStore.Id);
+
+        //validation (cart)
+        var checkoutAttributesXml = genericAttributeService.GetAttribute<string>(workContext.CurrentCustomer,
+            NopCustomerDefaults.CheckoutAttributes, storeContext.CurrentStore.Id);
+        var scWarnings = shoppingCartService.GetShoppingCartWarnings(cart, checkoutAttributesXml, true);
+        if (scWarnings.Any())
+        {
+            await jsService.DisplayBarNotification(scWarnings.ToArray(), JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        //validation (each shopping cart item)
+        foreach (var sci in cart)
+        {
+            var sciWarnings = shoppingCartService.GetShoppingCartItemWarnings(workContext.CurrentCustomer,
+                sci.ShoppingCartType,
+                sci.Product,
+                sci.StoreId,
+                sci.AttributesXml,
+                sci.CustomerEnteredPrice,
+                sci.RentalStartDateUtc,
+                sci.RentalEndDateUtc,
+                sci.Quantity,
+                false,
+                sci.Id);
+            if (sciWarnings.Any())
+            {
+                await jsService.DisplayBarNotification(scWarnings.ToArray(), JSMessageType.Error);
+                uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+                return;
+            }
+        }
+
+        uriHelper.NavigateTo(Url.RouteUrl("CheckoutBillingAddress"));
+    }
+}
+
+<LoadingStub />

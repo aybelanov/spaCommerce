@@ -1,0 +1,75 @@
+﻿@inject NavigationManager uriHelper
+
+@functions{
+
+    [Parameter] public CatalogPagingFilteringModel Model { get; set; }
+
+    private void OnChangeSelector(object pairs)
+    {
+        var path = uriHelper.GetRelativePath();
+        var query = uriHelper.ModifyQueryString(pairs);
+        uriHelper.NavigateTo(path + query);
+    }
+}
+
+<div class="product-selectors">
+    @*view mode*@
+    @if (Model.AllowProductViewModeChanging)
+{
+        <div class="product-viewmode">
+            <span>@T("Catalog.ViewMode")</span>
+            @if (Model.AvailableViewModes.Count > 1)
+{
+                var gridMode = Model.AvailableViewModes[0];
+                var listMode = Model.AvailableViewModes[1];
+
+                <a @onclick="@((arg) =>
+                               {
+                                   Model.AvailableViewModes[0].Selected = true;
+                                   Model.AvailableViewModes[1].Selected = false;
+                                   Model.ViewMode = "grid";
+                                   OnChangeSelector(new { Model.ViewMode });
+
+                               })" class="viewmode-icon grid @(gridMode.Selected ? "selected" : "")" title="@gridMode.Text">@gridMode.Text</a>
+                
+                <a @onclick="@((arg) =>
+                               {
+                                   Model.AvailableViewModes[0].Selected = false;
+                                   Model.AvailableViewModes[1].Selected = true;
+                                   Model.ViewMode = "list";
+                                   OnChangeSelector(new { Model.ViewMode });
+
+                               })" class="viewmode-icon list @(listMode.Selected ? "selected" : "")" title="@listMode.Text">@listMode.Text</a>
+}
+        </div>
+}
+    @*sorting*@
+    @if (Model.AllowProductSorting)
+{
+        <div class="product-sorting">
+            <span>@T("Catalog.OrderBy")</span>
+            <select @bind-value="@Model.OrderBy" @bind-value:event="oninput" @onchange="@((arg) => OnChangeSelector(new { Model.OrderBy }))" >
+
+                @foreach (var opt in Model.AvailableSortOptions)
+                 {
+                    <option selected="@opt.Selected" value="@opt.Value">@opt.Text</option>
+}                }
+            </select>
+        </div>
+}
+    @*page size*@
+    @if (Model.AllowCustomersToSelectPageSize)
+{
+        <div class="product-page-size">
+            <span>@T("Catalog.PageSize")</span>
+            <select @bind-value="@Model.PageSize" @bind-value:event="oninput"  @onchange="@((arg) => OnChangeSelector(new { Model.PageSize }))" >
+                
+                @foreach (var opt in Model.PageSizeOptions)
+                 { 
+                     <option selected="@opt.Selected" value="@opt.Value">@opt.Text</option>
+}                }
+            </select>
+            <span>@T("Catalog.PageSize.PerPage")</span>
+        </div>
+}
+</div>

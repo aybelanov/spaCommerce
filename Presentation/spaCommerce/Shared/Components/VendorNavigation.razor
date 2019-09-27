@@ -1,0 +1,49 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject ICatalogModelFactory factory
+
+@code{
+
+    private VendorNavigationModel Model;
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult<VendorNavigationModel>(factory.PrepareVendorNavigationModel());
+    }
+
+}
+
+@if (Model == null)
+{
+    <div class="block block-vendor-navigation">
+        <div class="title">
+            <strong>@T("Vendors")</strong>
+        </div>
+        <div class="listbox">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model.Vendors.Count > 0)
+{
+    <div class="block block-vendor-navigation">
+        <div class="title">
+            <strong>@T("Vendors")</strong>
+        </div>
+        <div class="listbox">
+            <ul class="list">
+                @foreach (var vendor in Model.Vendors)
+                {
+                    <li>
+                        <NavLink href="@Url.RouteUrl("Vendor", new { SeName = vendor.SeName })">@vendor.Name</NavLink>
+                    </li>
+                }
+            </ul>
+            @if (Model.TotalVendors > Model.Vendors.Count)
+            {
+                <div class="view-all">
+                    <NavLink href="@Url.RouteUrl("VendorList", null)">@T("Vendors.ViewAll")</NavLink>
+                </div>
+            }
+        </div>
+    </div>
+}

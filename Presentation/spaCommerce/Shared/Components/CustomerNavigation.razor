@@ -1,0 +1,38 @@
+﻿@inject ICustomerModelFactory customerModelFactory
+
+@code{
+
+    private CustomerNavigationModel Model { get; set; }
+    [Parameter] public int SelectedTabId { get; set; } = 0;
+
+    protected override Task DataRequest()
+    {
+        Model = customerModelFactory.PrepareCustomerNavigationModel(SelectedTabId);
+        return Task.CompletedTask;
+    }
+}
+
+<div class="block block-account-navigation">
+    <div class="title">
+        <strong>@T("Account.Navigation")</strong>
+    </div>
+    <div class="listbox">
+        <ul class="list">
+            <Widget WidgetZone="PublicWidgetZones.AccountNavigationBefore" />
+            @if (Model == null)
+            {
+                <LoadingStub />
+            }
+            else
+            {
+                foreach (var item in Model.CustomerNavigationItems)
+                {
+                    <li class="@item.ItemClass">
+                        <NavLink href="@Url.RouteUrl(item.RouteName)">@(item.Title)</NavLink>
+                    </li>
+                }
+            }
+            <Widget WidgetZone="PublicWidgetZones.AccountNavigationAfter" />
+        </ul>
+    </div>
+</div>

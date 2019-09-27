@@ -1,0 +1,238 @@
+﻿@using Microsoft.AspNetCore.WebUtilities
+@using Microsoft.AspNetCore.Http.Extensions
+@using Microsoft.Extensions.Primitives
+@inject Nop.Services.Localization.ILocalizationService localizationService
+@inject Nop.Core.IWebHelper webHelper
+@inject Microsoft.AspNetCore.Components.NavigationManager uriHelper
+@namespace spaCommerce.Shared.Tags
+
+@code{
+    /// <summary>
+    /// Model
+    /// </summary>
+    [Parameter] public Nop.Web.Framework.UI.Paging.CatalogPagingFilteringModel Model { get; set; }
+    /// <summary>
+    /// Page query string prameter name
+    /// </summary>
+    public static string PageQueryName { get; set; } = "pagenumber";
+    /// <summary>
+    /// A value indicating whether to show Total summary
+    /// </summary>
+    [Parameter] public bool ShowTotalSummary { get; set; }
+    /// <summary>
+    /// A value indicating whether to show pager items
+    /// </summary>
+    [Parameter] public bool ShowPagerItems { get; set; } = true;
+    /// <summary>
+    /// A value indicating whether to show the first item
+    /// </summary>
+    [Parameter] public bool ShowFirst { get; set; } = true;
+    /// <summary>
+    /// A value indicating whether to the previous item
+    /// </summary>
+    [Parameter] public bool ShowPrevious { get; set; } = true;
+    /// <summary>
+    /// A value indicating whether to show the next item
+    /// </summary>
+    [Parameter] public bool ShowNext { get; set; } = true;
+    /// <summary>
+    /// A value indicating whether to show the last item
+    /// </summary>
+    [Parameter] public bool ShowLast { get; set; } = true;
+    /// <summary>
+    /// A value indicating whether to show individual page
+    /// </summary>
+    [Parameter] public bool ShowIndividualPages { get; set; } = true;
+    /// <summary>
+    /// A value indicating whether to render empty query string parameters (without values)
+    /// </summary>
+    [Parameter] public bool RenderEmptyParameters { get; set; } = true;
+    /// <summary>
+    /// Number of individual page items to display
+    /// </summary>
+    [Parameter] public int IndividualPagesDisplayedCount { get; set; } = 5;
+    /// <summary>
+    /// Boolean parameter names
+    /// </summary>
+    [Parameter] public IList<string> BooleanParameterNames { get; set; }
+    /// <summary>
+    /// First page css class name
+    /// </summary>
+    [Parameter] public string FirstPageCssClass { get; set; } = "first-page";
+    /// <summary>
+    /// Previous page css class name
+    /// </summary>
+    [Parameter] public string PreviousPageCssClass { get; set; } = "previous-page";
+    /// <summary>
+    /// Current page css class name
+    /// </summary>
+    [Parameter] public string CurrentPageCssClass { get; set; } = "current-page";
+    /// <summary>
+    /// Individual page css class name
+    /// </summary>
+    [Parameter] public string IndividualPageCssClass { get; set; } = "individual-page";
+    /// <summary>
+    /// Next page css class name
+    /// </summary>
+    [Parameter] public string NextPageCssClass { get; set; } = "next-page";
+    /// <summary>
+    /// Last page css class name
+    /// </summary>
+    [Parameter] public string LastPageCssClass { get; set; } = "last-page";
+    /// <summary>
+    /// Main ul css class name
+    /// </summary>
+    [Parameter] public string MainUlCssClass { get; set; } = "";
+    /// <summary>
+    /// If the pager is located on a search page and we have new search
+    /// </summary>
+    [Parameter] public bool? IsNewSearch { get; set; }
+
+    /// <summary>
+    /// Get first individual page index
+    /// </summary>
+    /// <returns>Page index</returns>
+    protected virtual int GetFirstIndividualPageIndex()
+    {
+        if ((Model.TotalPages < IndividualPagesDisplayedCount) ||
+            ((Model.PageIndex - (IndividualPagesDisplayedCount / 2)) < 0))
+        {
+            return 0;
+        }
+
+        if ((Model.PageIndex + (IndividualPagesDisplayedCount / 2)) >= Model.TotalPages)
+        {
+            return (Model.TotalPages - IndividualPagesDisplayedCount);
+        }
+
+        return (Model.PageIndex - (IndividualPagesDisplayedCount / 2));
+    }
+
+    /// <summary>
+    /// Get last individual page index
+    /// </summary>
+    /// <returns>Page index</returns>
+    protected virtual int GetLastIndividualPageIndex()
+    {
+        var num = IndividualPagesDisplayedCount / 2;
+        if ((IndividualPagesDisplayedCount % 2) == 0)
+        {
+            num--;
+        }
+        if ((Model.TotalPages < IndividualPagesDisplayedCount) ||
+            ((Model.PageIndex + num) >= Model.TotalPages))
+        {
+            return (Model.TotalPages - 1);
+        }
+        if ((Model.PageIndex - (IndividualPagesDisplayedCount / 2)) < 0)
+        {
+            return (IndividualPagesDisplayedCount - 1);
+        }
+        return (Model.PageIndex + num);
+    }
+
+
+    // TODO Need test
+    /// <summary>
+    /// Create default URL
+    /// </summary>
+    /// <param name="pageNumber">Page number</param>
+    /// <returns>URL</returns>
+    protected virtual string CreateDefaultUrl(int pageNumber)
+    {
+        var newQuery = uriHelper.ModifyQueryString(new { pageNumber });
+        return uriHelper.GetRelativePath() + newQuery.Value;
+    }
+}
+
+
+@if (Model.TotalItems > 0)
+{
+    <div class="pager">
+        <ul class="@MainUlCssClass">
+            @if (ShowTotalSummary && (Model.TotalPages > 0))
+            {
+                <li class="total-summary">
+                    @string.Format(localizationService.GetResource("Pager.CurrentPage"), Model.PageIndex + 1, Model.TotalPages, Model.TotalItems)
+                </li>
+            }
+
+            @if (ShowPagerItems && (Model.TotalPages > 1))
+            {
+                if (ShowFirst)
+                {
+                    //first page
+                    if ((Model.PageIndex >= 3) && (Model.TotalPages > IndividualPagesDisplayedCount))
+                    {
+                        <li class="@FirstPageCssClass">
+                            <a href="@(CreateDefaultUrl(1))">
+                                @localizationService.GetResource("Pager.First")
+                            </a>
+                        </li>
+                    }
+                }
+
+                if (ShowPrevious)
+                {
+                    //previous page
+                    if (Model.PageIndex > 0)
+                    {
+                        <li class="@PreviousPageCssClass">
+                            <a href="@(CreateDefaultUrl(Model.PageIndex))">
+                                @localizationService.GetResource("Pager.Previous")
+                            </a>
+                        </li>
+                    }
+                }
+
+                if (ShowIndividualPages)
+                {
+                    //individual pages
+                    var firstIndividualPageIndex = GetFirstIndividualPageIndex();
+                    var lastIndividualPageIndex = GetLastIndividualPageIndex();
+                    for (var i = firstIndividualPageIndex; i <= lastIndividualPageIndex; i++)
+                    {
+                        if (Model.PageIndex == i)
+                        {
+                            <li class="@CurrentPageCssClass"><span>@(i + 1)</span></li>
+                        }
+                        else
+                        {
+                            <li class="@IndividualPageCssClass">
+                                <a href="@(CreateDefaultUrl(i + 1))">
+                                    @((i + 1).ToString())
+                                </a>
+                            </li>
+                        }
+                    }
+                }
+
+                if (ShowNext)
+                {
+                    //next page
+                    if ((Model.PageIndex + 1) < Model.TotalPages)
+                    {
+                        <li class="@NextPageCssClass">
+                            <a href="@(CreateDefaultUrl(Model.PageIndex + 2))">
+                                @localizationService.GetResource("Pager.Next")
+                            </a>
+                        </li>
+                    }
+                }
+
+                if (ShowLast)
+                {
+                    //last page
+                    if (((Model.PageIndex + 3) < Model.TotalPages) && (Model.TotalPages > IndividualPagesDisplayedCount))
+                    {
+                        <li class="@LastPageCssClass">
+                            <a href="@(CreateDefaultUrl(Model.TotalPages))">
+                                @localizationService.GetResource("Pager.Last")
+                            </a>
+                        </li>
+                    }
+                }
+            }
+        </ul>
+    </div>
+}

@@ -1,0 +1,77 @@
+﻿@inherits LazyLoadingSpaComponent
+@using Nop.Core.Domain.Catalog
+@using Nop.Services.Orders
+@using Nop.Core.Caching
+@using Nop.Core
+@using spaCommerce.Infrastructure.Cache
+@inject CatalogSettings catalogSettings
+@inject IAclService aclService
+@inject IOrderReportService orderReportService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IStaticCacheManager cacheManager
+@inject IStoreContext storeContext
+@inject IStoreMappingService storeMappingService
+
+@code{
+
+    protected IList<ProductOverviewModel> Model { get; set; }
+
+    [Parameter] public int? ProductThumbPictureSize { get; set; }
+
+    protected override Task DataRequest()
+    {
+        if (catalogSettings.ShowBestsellersOnHomepage && catalogSettings.NumberOfBestsellersOnHomepage != 0)
+        {
+            //load and cache report
+            var report = cacheManager.Get(string.Format(ModelCacheEventConsumer.HOMEPAGE_BESTSELLERS_IDS_KEY, storeContext.CurrentStore.Id),
+                () => orderReportService.BestSellersReport(
+                        storeId: storeContext.CurrentStore.Id,
+                        pageSize: catalogSettings.NumberOfBestsellersOnHomepage)
+                    .ToList());
+
+            //load products
+            var products = productService.GetProductsByIds(report.Select(x => x.ProductId).ToArray());
+            //ACL and store mapping
+            products = products.Where(p => aclService.Authorize(p) && storeMappingService.Authorize(p)).ToList();
+            //availability dates
+            products = products.Where(p => productService.ProductIsAvailable(p)).ToList();
+
+            if (products.Any())
+            {
+                //prepare model
+                Model = productModelFactory.PrepareProductOverviewModels(products, true, true, ProductThumbPictureSize).ToList();
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+@if (needStub)
+{
+    <div class="product-grid bestsellers">
+        <div class="title">
+            <strong>@T("Bestsellers")</strong>
+        </div>
+        <div class="item-grid">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model != null && Model.Count > 0)
+{
+    <div class="product-grid bestsellers">
+        <div class="title">
+            <strong>@T("Bestsellers")</strong>
+        </div>
+        <div class="item-grid">
+            @foreach (var item in Model)
+            {
+                <div class="item-box">
+                    <_ProductBox Model="@item" />
+                </div>
+            }
+        </div>
+    </div>
+}

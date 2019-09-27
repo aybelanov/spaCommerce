@@ -1,0 +1,387 @@
+﻿@page "/checkout/billingaddress"
+@page "/checkout/selectbillingaddress"
+@layout _ColumnsOne
+@using Nop.Core.Domain.Shipping
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject ICheckoutModelFactory checkoutModelFactory
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IShoppingCartService shoppingCartService
+@inject ShippingSettings shippingSettings
+@inject IAddressAttributeParser addressAttributeParser
+@inject IAddressService addressService
+
+@code{
+
+    private CheckoutBillingAddressModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        //if (_orderSettings.OnePageCheckoutEnabled)
+        //    return RedirectToRoute("CheckoutOnePage");
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //model
+        Model = checkoutModelFactory.PrepareBillingAddressModel(cart, prePopulateNewAddressWithCustomerFields: true);
+
+        //check whether "billing address" step is enabled
+        if (orderSettings.DisableBillingAddressCheckoutStep)
+        {
+            if (Model.ExistingAddresses.Any())
+            {
+                //choose the first one
+                SelectBillingAddress(Model.ExistingAddresses.First().Id);
+            }
+
+            var editContext1 = new EditContext(Model);
+            var editContext2 = new EditContext(Model.BillingNewAddress);
+            //TryValidateModel(Model);
+            //TryValidateModel(Model.BillingNewAddress);
+            if (editContext1.Validate() && editContext2.Validate())
+            {
+                await NewBillingAddress(Model);
+            }
+        }
+    }
+
+
+    private async Task OnValidBillingNewAddress(EditContext editContext)
+        => await NewBillingAddress(Model);
+
+
+    private void SelectBillingAddress(int addressId, bool shipToSameAddress = false)
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var address = workContext.CurrentCustomer.Addresses.FirstOrDefault(a => a.Id == addressId);
+        if (address == null)
+        {
+            //uriHelper.NavigateTo(Url.RouteUrl("CheckoutBillingAddress"));
+            return;
+        }
+
+        workContext.CurrentCustomer.BillingAddress = address;
+        customerService.UpdateCustomer(workContext.CurrentCustomer);
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        //ship to the same address?
+        if (shippingSettings.ShipToSameAddress && shipToSameAddress && shoppingCartService.ShoppingCartRequiresShipping(cart) && address.Country.AllowsShipping)
+        {
+            workContext.CurrentCustomer.ShippingAddress = workContext.CurrentCustomer.BillingAddress;
+            customerService.UpdateCustomer(workContext.CurrentCustomer);
+            //reset selected shipping method (in case if "pick up in store" was selected)
+            genericAttributeService.SaveAttribute<ShippingOption>(workContext.CurrentCustomer, NopCustomerDefaults.SelectedShippingOptionAttribute, null, storeContext.CurrentStore.Id);
+            genericAttributeService.SaveAttribute<PickupPoint>(workContext.CurrentCustomer, NopCustomerDefaults.SelectedPickupPointAttribute, null, storeContext.CurrentStore.Id);
+            //limitation - "Ship to the same address" doesn't properly work in "pick up in store only" case (when no shipping plugins are available)
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutShippingMethod"));
+            return;
+        }
+
+        uriHelper.NavigateTo(Url.RouteUrl("CheckoutShippingAddress"));
+    }
+
+
+    private async Task NewBillingAddress(CheckoutBillingAddressModel model)
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        //if (_orderSettings.OnePageCheckoutEnabled)
+        //    return RedirectToRoute("CheckoutOnePage");
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //custom address attributes
+        var customAttributes = addressAttributeParser.ParseCustomAddressAttributes(model.Form ?? new FormCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>()));
+        var customAttributeWarnings = addressAttributeParser.GetAttributeWarnings(customAttributes);
+        if (customAttributeWarnings.Any())
+        {
+            await jsService.DisplayBarNotification(customAttributeWarnings.ToArray(), JSMessageType.Error);
+            return;
+        }
+
+        var newAddress = model.BillingNewAddress;
+
+        //try to find an address with the same values (don't duplicate records)
+        var address = addressService.FindAddress(workContext.CurrentCustomer.Addresses.ToList(),
+            newAddress.FirstName, newAddress.LastName, newAddress.PhoneNumber,
+            newAddress.Email, newAddress.FaxNumber, newAddress.Company,
+            newAddress.Address1, newAddress.Address2, newAddress.City,
+            newAddress.County, newAddress.StateProvinceId, newAddress.ZipPostalCode,
+            newAddress.CountryId, customAttributes);
+        if (address == null)
+        {
+            //address is not found. let's create a new one
+            address = newAddress.ToEntity();
+            address.CustomAttributes = customAttributes;
+            address.CreatedOnUtc = DateTime.UtcNow;
+            //some validation
+            if (address.CountryId == 0)
+                address.CountryId = null;
+            if (address.StateProvinceId == 0)
+                address.StateProvinceId = null;
+            //_workContext.CurrentCustomer.Addresses.Add(address);
+            workContext.CurrentCustomer.CustomerAddressMappings.Add(new CustomerAddressMapping { Address = address });
+        }
+        workContext.CurrentCustomer.BillingAddress = address;
+        customerService.UpdateCustomer(workContext.CurrentCustomer);
+
+        //ship to the same address?
+        if (shippingSettings.ShipToSameAddress && model.ShipToSameAddress && shoppingCartService.ShoppingCartRequiresShipping(cart))
+        {
+            workContext.CurrentCustomer.ShippingAddress = workContext.CurrentCustomer.BillingAddress;
+            customerService.UpdateCustomer(workContext.CurrentCustomer);
+            //reset selected shipping method (in case if "pick up in store" was selected)
+            genericAttributeService.SaveAttribute<ShippingOption>(workContext.CurrentCustomer, NopCustomerDefaults.SelectedShippingOptionAttribute, null, storeContext.CurrentStore.Id);
+            genericAttributeService.SaveAttribute<PickupPoint>(workContext.CurrentCustomer, NopCustomerDefaults.SelectedPickupPointAttribute, null, storeContext.CurrentStore.Id);
+            //limitation - "Ship to the same address" doesn't properly work in "pick up in store only" case (when no shipping plugins are available)
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutShippingMethod"));
+        }
+
+        uriHelper.NavigateTo(Url.RouteUrl("CheckoutShippingAddress"));
+    }
+
+
+    private void BillToThisAddress(int itemId)
+    {
+        if (Model.ShipToSameAddress)
+        {
+            SelectBillingAddress(itemId, shipToSameAddress: true);
+        }
+        else
+        {
+            SelectBillingAddress(itemId);
+        }
+    }
+}
+
+<div class="page checkout-page billing-address-page">
+    <CheckoutProgress Step="CheckoutProgressStep.Address" />
+
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Checkout").Text);
+        //page class
+        Html.AppendPageCssClassParts("html-checkout-page");
+        Html.AppendPageCssClassParts("html-billing-address-page");
+        <div class="page-title">
+            <h1>@T("Checkout.BillingAddress")</h1>
+        </div>
+
+        <div class="page-body checkout-data">
+            <EditForm Model="Model.BillingNewAddress" OnValidSubmit="OnValidBillingNewAddress" method="post">
+                <FluentValidationValidator />
+                <div class="billing-addresses">
+                    <Widget WidgetZone="checkout_billing_address_top" />
+                    @if (Model.ShipToSameAddressAllowed)
+                    {
+                        <div class="section ship-to-same-address">
+                            <div class="selector">
+                                <InputCheckbox @bind-Value="Model.ShipToSameAddress" />
+                                <label>@T("Checkout.ShipToSameAddress")</label>
+                            </div>
+                        </div>
+                    }
+                    @if (Model.ExistingAddresses.Count > 0)
+                    {
+                        <div class="section select-billing-address">
+                            <div class="title">
+                                <strong>@T("Checkout.SelectBillingAddress")</strong>
+                            </div>
+                            <div class="address-grid">
+                                @foreach (var item in Model.ExistingAddresses)
+                                {
+                                    <div class="address-item">
+                                        <ul class="address-box">
+                                            <li class="name">
+                                                @item.FirstName @item.LastName
+                                            </li>
+                                            <li class="email">
+                                                <label>@T("Address.Fields.Email"):</label>
+                                                <span>@item.Email</span>
+                                            </li>
+                                            @if (item.PhoneEnabled)
+                                            {
+                                                <li class="phone">
+                                                    <label>@T("Address.Fields.PhoneNumber"):</label>
+                                                    <span>@item.PhoneNumber</span>
+                                                </li>
+                                            }
+                                            @if (item.FaxEnabled)
+                                            {
+                                                <li class="fax">
+                                                    <label>@T("Address.Fields.FaxNumber"):</label>
+                                                    <span>@item.FaxNumber</span>
+                                                </li>
+                                            }
+                                            @if (item.CompanyEnabled && !string.IsNullOrEmpty(item.Company))
+                                            {
+                                                <li class="company">
+                                                    @item.Company
+                                                </li>
+                                            }
+                                            @if (item.StreetAddressEnabled)
+                                            {
+                                                <li class="address1">
+                                                    @item.Address1
+                                                </li>
+                                            }
+                                            @if (item.StreetAddress2Enabled && !string.IsNullOrEmpty(item.Address2))
+                                            {
+                                                <li class="address2">
+                                                    @item.Address2
+                                                </li>
+                                            }
+                                            @if (item.CityEnabled && !string.IsNullOrEmpty(item.City) ||
+                                              item.CountyEnabled && !string.IsNullOrEmpty(item.County) ||
+                                              item.StateProvinceEnabled && !string.IsNullOrEmpty(item.StateProvinceName) ||
+                                              item.ZipPostalCodeEnabled && !string.IsNullOrEmpty(item.ZipPostalCode))
+                                            {
+                                                <li class="city-state-zip">
+                                                    @if (item.CityEnabled && !string.IsNullOrEmpty(item.City))
+                                                    {
+                                                        @item.City
+                                                        @if (item.CountyEnabled && !string.IsNullOrEmpty(item.County) ||
+                                                          item.StateProvinceEnabled && !string.IsNullOrEmpty(item.StateProvinceName) ||
+                                                          item.ZipPostalCodeEnabled && !string.IsNullOrEmpty(item.ZipPostalCode))
+                                                        {
+                                                            <text>,</text>
+                                                        }
+                                                    }
+                                                    @if (item.CountyEnabled && !string.IsNullOrEmpty(item.County))
+                                                    {
+                                                        @item.County
+                                                        @if (item.StateProvinceEnabled && !string.IsNullOrEmpty(item.StateProvinceName) ||
+                                                           item.ZipPostalCodeEnabled && !string.IsNullOrEmpty(item.ZipPostalCode))
+                                                        {
+                                                            <text>,</text>
+                                                        }
+                                                    }
+                                                    @if (item.StateProvinceEnabled && !string.IsNullOrEmpty(item.StateProvinceName))
+                                                    {
+                                                        @item.StateProvinceName
+                                                        @if (item.ZipPostalCodeEnabled && !string.IsNullOrEmpty(item.ZipPostalCode))
+                                                        {
+                                                            <text>,</text>
+                                                        }
+                                                    }
+                                                    @if (item.ZipPostalCodeEnabled && !string.IsNullOrEmpty(item.ZipPostalCode))
+                                                    {
+                                                        @item.ZipPostalCode
+                                                    }
+                                                </li>
+                                            }
+                                            @if (item.CountryEnabled && !string.IsNullOrEmpty(item.CountryName))
+                                            {
+                                                <li class="country">
+                                                    @item.CountryName
+                                                </li>
+                                            }
+                                            @if (!string.IsNullOrEmpty(item.FormattedCustomAddressAttributes))
+                                            {
+                                                <li class="custom-attributes-view">
+                                                    @((MarkupString)item.FormattedCustomAddressAttributes)
+                                                </li>
+                                            }
+                                        </ul>
+                                        <div class="select-button">
+                                            <input type="button" value="@T("Checkout.BillToThisAddress")" class="button-1 select-billing-address-button" @onclick="@(e => BillToThisAddress(item.Id))" />
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                    <Widget WidgetZone="checkout_billing_address_middle" />
+                    <div class="section new-billing-address">
+                        <div class="title">
+                            @if (Model.ExistingAddresses.Count > 0)
+                            {
+                                <strong>@T("Checkout.OrEnterNewAddress")</strong>
+                            }
+                            else
+                            {
+                                <strong>@T("Checkout.EnterBillingAddress")</strong>
+                            }
+                        </div>
+                        <div class="enter-address">
+                            <ValidationSummary />
+                            <_CreateOrUpdateAddress Model="Model.BillingNewAddress" />
+                        </div>
+                    </div>
+                    <Widget WidgetZone="checkout_billing_address_bottom" />
+                </div>
+                <div class="buttons">
+                    <input type="submit" name="nextstep" value="@T("Checkout.NextButton")" class="button-1 new-address-next-step-button" />
+                </div>
+            </EditForm>
+            <div class="section order-summary">
+                <div class="title">
+                    <strong>@T("Checkout.OrderSummary")</strong>
+                </div>
+                <OrderSummary />
+            </div>
+        </div>
+    }
+</div>

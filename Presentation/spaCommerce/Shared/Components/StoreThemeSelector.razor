@@ -1,0 +1,38 @@
+﻿@using System.Net
+@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Mvc.Rendering
+@using Nop.Core
+
+@inject IWebHelper webHelper
+@inject IHttpContextAccessor httpContextAccessor
+@inject  ICommonModelFactory _factory
+
+
+@if (Model == null)
+{
+    <LoadingStub>loading the theme selector...</LoadingStub>
+}
+else if (Model.AvailableStoreThemes.Count > 1)
+{
+    var themes = Model.AvailableStoreThemes.Select(x => new SelectListItem
+    {
+        Text = x.Title,
+        Value = webHelper.ModifyQueryString(Url.GetUriByAction(httpContextAccessor.HttpContext.Request.HttpContext, "SetStoreTheme", "Common", new { themename = x.Name }), "returnurl", webHelper.GetRawUrl(httpContextAccessor.HttpContext.Request)),
+        Selected = x.Name.Equals(Model.CurrentStoreTheme.Name, StringComparison.InvariantCultureIgnoreCase)
+    });
+    <div class="theme-selector">
+        <select id="store-theme" name="store-theme" asp-items="@themes" onchange="setLocation(this.value);"></select>
+    </div>
+}
+
+
+@functions{
+
+    private StoreThemeSelectorModel Model;
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult<StoreThemeSelectorModel>(_factory.PrepareStoreThemeSelectorModel());
+
+    }
+}

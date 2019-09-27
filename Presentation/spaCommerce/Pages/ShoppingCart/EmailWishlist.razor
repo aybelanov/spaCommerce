@@ -1,0 +1,167 @@
+﻿@page "/emailwishlist"
+@layout _ColumnsOne
+@inject NavigationManager uriHelper
+@inject IWorkContext workContext
+@inject ILocalizationService localizationService
+@inject IWorkflowMessageService workflowMessageService
+@inject IPermissionService permissionService
+@inject ShoppingCartSettings shoppingCartSettings
+@inject IStoreContext storeContext
+@inject IShoppingCartModelFactory shoppingCartModelFactory
+@inject CaptchaSettings captchaSettings
+@inject IJSService jsService
+
+
+@code{
+
+    private WishlistEmailAFriendModel Model { get; set; }
+
+    Recaptcha recaptcha;
+
+
+    protected override async Task DataRequest()
+    {
+        if (!permissionService.Authorize(StandardPermissionProvider.EnableWishlist) || !shoppingCartSettings.EmailWishlistEnabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.Wishlist)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        Model = new WishlistEmailAFriendModel();
+        Model = await Task.FromResult<WishlistEmailAFriendModel>(shoppingCartModelFactory.PrepareWishlistEmailAFriendModel(Model, false));
+    }
+
+
+    protected async Task OnValidSubmit(EditContext context)
+    {
+        await jsService.ShowLoadWaiting();
+        if (!permissionService.Authorize(StandardPermissionProvider.EnableWishlist) || !shoppingCartSettings.EmailWishlistEnabled)
+        {
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.Wishlist)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            await jsService.ResetLoadWaiting();
+
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //validate CAPTCHA
+        if (captchaSettings.Enabled && captchaSettings.ShowOnEmailWishlistToFriendPage && !await recaptcha.IsCaptchaValid())
+        {
+            //ModelState.AddModelError("", _captchaSettings.GetWrongCaptchaMessage(_localizationService));
+            await jsService.DisplayBarNotification(new[] { captchaSettings.GetWrongCaptchaMessage(localizationService) }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+
+            StateHasChanged();
+            return;
+        }
+
+        //check whether the current customer is guest and ia allowed to email wishlist
+        if (workContext.CurrentCustomer.IsGuest() && !shoppingCartSettings.AllowAnonymousUsersToEmailWishlist)
+        {
+            await jsService.DisplayBarNotification(new[] { captchaSettings.GetWrongCaptchaMessage(localizationService) }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+
+            StateHasChanged();
+            return;
+        }
+
+        await jsService.ResetLoadWaiting();
+        needStub = true;
+        StateHasChanged();
+
+        //email
+        workflowMessageService.SendWishlistEmailAFriendMessage(workContext.CurrentCustomer,
+                workContext.WorkingLanguage.Id, Model.YourEmailAddress,
+                Model.FriendEmail,
+                Nop.Core.Html.HtmlHelper.FormatText(Model.PersonalMessage, false, true, false, false, false, false));
+
+        Model.SuccessfullySent = true;
+        Model.Result = localizationService.GetResource("Wishlist.EmailAFriend.SuccessfullySent");
+
+        await jsService.DisplayBarNotification(new[] { Model.Result });
+        needStub = false;
+        StateHasChanged();
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(T("PageTitle.WishlistEmailAFriend").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-email-a-friend-page");
+
+    <div class="page email-a-friend-page">
+        <div class="page-title">
+            <h1>@T("Wishlist.EmailAFriend.Title")</h1>
+        </div>
+        <div class="page-body">
+            @if (Model.SuccessfullySent)
+            {
+                <div class="result">
+                    @Model.Result
+                </div>
+            }
+            else
+            {
+        <EditForm Model="@Model" OnValidSubmit="@OnValidSubmit">
+            <FluentValidationValidator />
+            <ValidationSummary />
+            <div class="fieldset">
+                <div class="form-fields">
+                    <div class="inputs">
+                        <LabelText For="@(()=>Model.FriendEmail)" Postfix=":" />
+                        <InputText @bind-Value="@Model.FriendEmail" type="email" class="friend-email" placeholder="@T("Wishlist.EmailAFriend.FriendEmail.Hint")" />
+                        <ValidationMessage For="@(()=>Model.FriendEmail)" />
+                    </div>
+                    <div class="inputs">
+                        <LabelText For="@(()=>Model.YourEmailAddress)" Postfix=":" />
+                        <InputText @bind-Value="@Model.YourEmailAddress" type="email" class="your-email" placeholder="@T("Wishlist.EmailAFriend.YourEmailAddress.Hint")" />
+                        <ValidationMessage For="@(()=>Model.YourEmailAddress)" />
+                    </div>
+                    <div class="inputs">
+                        <LabelText For="@(()=>Model.PersonalMessage)" Postfix=":"></LabelText>
+                        <InputTextArea @bind-Value="@Model.PersonalMessage" type="textarea" class="personal-message" placeholder="@T("Wishlist.EmailAFriend.PersonalMessage.Hint")" />
+                        <ValidationMessage For="@(()=>Model.PersonalMessage)" />
+                    </div>
+                    @if (Model.DisplayCaptcha)
+                    {
+                        <div class="captcha-box">
+                            <Recaptcha @ref="@recaptcha" />
+                        </div>
+                    }
+                </div>
+            </div>
+            <div class="buttons">
+                <input type="submit" name="send-email" class="button-1 send-email-a-friend-button" value="@T("Wishlist.EmailAFriend.Button")" />
+            </div>
+        </EditForm>
+            }
+        </div>
+    </div>
+}

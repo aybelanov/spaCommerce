@@ -1,0 +1,135 @@
+﻿@page "/{topic:urlservice}"
+
+@inherits SpaGenericPageComponent
+@using Nop.Core.Domain.Seo
+@using Nop.Services.Seo
+@using Nop.Services.Topics
+@using Nop.Services.Localization
+@inject Nop.Core.IWebHelper webHelper
+@inject SeoSettings seoSettings
+@inject IJSRuntime jsRuntime
+@inject IAclService aclService
+@inject ILocalizationService localizationService
+@inject IPermissionService permissionService
+@inject IStoreMappingService storeMappingService
+@inject ITopicModelFactory topicModelFactory
+@inject ITopicService topicService
+@inject NavigationManager uriHelper
+
+@code{
+
+    protected TopicModel Model { get; set; }
+
+    [Parameter] public bool IsPopup { get; set; }
+
+    [Parameter] public int TopicId { get; set; }
+
+    string templateViewPath;
+
+    bool hasAdminAccess;
+
+
+    protected override Task DataRequest()
+    {
+        if (CurrentUrlRecord == null)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return Task.CompletedTask;
+        }
+
+        Model = topicModelFactory.PrepareTopicModelById(CurrentUrlRecord.EntityId);
+
+        hasAdminAccess = permissionService.Authorize(StandardPermissionProvider.AccessAdminPanel)
+            && permissionService.Authorize(StandardPermissionProvider.ManageTopics);
+
+        //template
+        templateViewPath = topicModelFactory.PrepareTemplateViewPath(Model.TopicTemplateId);
+        return Task.CompletedTask;
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("TopicDetailsScript", Model.Id, Url.RouteUrl("TopicAuthenticate"));
+        }
+        catch { }
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+
+
+    @if (!Model.Published && !hasAdminAccess)
+    {
+        uriHelper.NavigateTo(Url.GetPathByRouteValues("HomePage", null));
+    }
+    else
+    {
+        ////display "edit" (manage) link
+        //if (hasAdminAccess)
+        //    DisplayEditLink(Url.Action("Edit", "Topic", new { id = model.Id, area = AreaNames.Admin }));
+
+
+
+
+        //if (isPopup == null || isPopup == false)
+        //{
+        //    Layout = "_ColumnsOne";
+        //}
+
+        if (!Model.IsPasswordProtected)
+        {
+            //title
+            Html.AddTitleParts(!string.IsNullOrEmpty(Model.MetaTitle) ? Model.MetaTitle : Model.Title);
+            //meta
+            Html.AddMetaDescriptionParts(Model.MetaDescription);
+            Html.AddMetaKeywordParts(Model.MetaKeywords);
+        }
+
+        if (seoSettings.CanonicalUrlsEnabled)
+        {
+            var topicUrl = Url.RouteUrl("Topic", new { SeName = Model.SeName }, webHelper.CurrentRequestProtocol).ToLowerInvariant();
+            Html.AddCanonicalUrlParts(topicUrl, seoSettings.QueryStringInCanonicalUrlsEnabled);
+        }
+
+        //page class
+        Html.AppendPageCssClassParts("html-topic-page");
+
+        @if (Model.IsPasswordProtected)
+        {
+
+            <div class="topic-password" id="ph-password">
+                <form asp-route="TopicAuthenticate" method="post">
+                    <input asp-for="Id" id="topic-@Model.Id" type="hidden" />
+                    <div class="enter-password-title">
+                        @T("Topic.EnterPassword")
+                    </div>
+                    <div class="enter-password-form">
+                        <input name="password" id="password" type="password" />
+                        <input type="submit" id="button-password" value="@T("Topic.Button")" class="button-1 topic-password-button" />
+                    </div>
+                    <div class="password-error" id="password-error" style="display: none;"></div>
+                </form>
+            </div>
+        }
+        <div class="page topic-page" id="ph-topic">
+            <div class="page-title" id="ph-title">
+                <h1>@Model.Title</h1>
+            </div>
+            <div class="page-body">
+                @((MarkupString)Model.Body)
+                @if (Model.SystemName == "BigCustomer")
+                {
+                    <Widget WidgetZone="topic_page_big_client" />
+                }
+            </div>
+        </div>
+    }
+}

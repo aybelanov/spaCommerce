@@ -1,0 +1,35 @@
+﻿@inherits Nop.Web.Framework.Mvc.Razor.NopRazorPage<TModel>
+@addTagHelper *, Microsoft.AspNetCore.Mvc.TagHelpers
+@*we remove the default InputTagHelper to prevent the checkbox duplicating: https://stackoverflow.com/questions/42544961/asp-net-core-custom-input-tag-helper-rendering-duplicate-checkboxes*@
+@removeTagHelper Microsoft.AspNetCore.Mvc.TagHelpers.InputTagHelper, Microsoft.AspNetCore.Mvc.TagHelpers
+@addTagHelper *, Nop.Web.Framework
+@addTagHelper *, MiniProfiler.AspNetCore.Mvc
+
+@using Microsoft.AspNetCore.Mvc.ViewFeatures
+@using spaCommerce.Extensions
+@using spaCommerce.Pages
+@using spaCommerce.Shared
+@using spaCommerce.Shared.Components
+@using Nop.Web.Framework.UI
+@using Nop.Web.Framework.Extensions
+@using Nop.Web.Framework.Security.Captcha
+@using Nop.Web.Framework.Security.Honeypot
+@using Nop.Web.Framework.Themes
+@using Nop.Web.Framework.Infrastructure
+@using spaCommerce.Models.Blogs
+@using spaCommerce.Models.Boards
+@using spaCommerce.Models.Catalog
+@using spaCommerce.Models.Checkout
+@using spaCommerce.Models.Cms
+@using spaCommerce.Models.Common
+@using spaCommerce.Models.Customer
+@using spaCommerce.Models.Media
+@using spaCommerce.Models.News
+@using spaCommerce.Models.Newsletter
+@using spaCommerce.Models.Order
+@using spaCommerce.Models.Polls
+@using spaCommerce.Models.PrivateMessages
+@using spaCommerce.Models.Profile
+@using spaCommerce.Models.ShoppingCart
+@using spaCommerce.Models.Topics
+@using spaCommerce.Models.Vendors

@@ -1,0 +1,81 @@
+@code {
+
+    [Parameter] public RenderFragment ChildContent { get; set; }
+
+}
+
+<div>
+    @*<style>
+        @@keyframes animate-stripes {
+            0% {
+                background-position: 0 0;
+            }
+
+            100% {
+                background-position: 60px 0;
+            }
+        }
+
+        @@keyframes auto-progress {
+            0% {
+                width: 0%;
+            }
+
+            100% {
+                width: 100%;
+            }
+        }
+
+        .progress-bar-container {
+            text-align: center;
+            text-transform: lowercase;
+            font-style: italic;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .progress-bar {
+            background-color: #fff;
+            height: 10px;
+            width: 100%;
+            max-width: 150px;
+            margin: 5px auto 15px auto;
+            border-radius: 3px;
+            box-shadow: 0 0px 2px #444 inset, 0 0px 0 #444;
+        }
+
+        .stripes {
+            background-size: 30px 30px;
+            background-image: linear-gradient( 135deg, rgba(220, 220, 220, .35) 25%, transparent 25%, transparent 50%, rgba(220, 220, 220, .35) 50%, rgba(255, 220, 220, .35) 75%, transparent 75%, transparent );
+        }
+
+            .stripes.animated {
+                animation: animate-stripes 0.6s linear infinite;
+            }
+
+                .stripes.animated.slower {
+                    animation-duration: 1.25s;
+                }
+
+            .stripes.reverse {
+                animation-direction: reverse;
+            }
+
+        .progress-bar-inner {
+            display: block;
+            height: 10px;
+            width: 0%;
+            background-color: #75b800;
+            border-radius: 3px;
+            box-shadow: 0 0px 0 rgba(220, 220, 220, .35) inset;
+            position: relative;
+            animation: auto-progress 10s infinite linear;
+        }
+    </style>*@
+    <div class="progress-bar-container">
+        @ChildContent
+        <div class="progress-bar stripes animated reverse slower">
+            <span class="progress-bar-inner"></span>
+        </div>
+    </div>
+</div>

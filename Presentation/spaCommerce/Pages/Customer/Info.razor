@@ -1,0 +1,798 @@
+﻿@page  "/customer/info"
+@using System.Text.Encodings.Web
+@using Nop.Core
+@inject Nop.Core.IWebHelper webHelper
+@layout _ColumnsTwo
+@attribute [Authorize]
+@inject ICountryModelFactory countryModelFactory
+@inject ICustomerModelFactory customerModelFactory
+@inject NavigationManager uriHelper
+@inject IJSService jsService
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject CustomerSettings customerSettings
+@inject ILocalizationService localizationService
+@inject ICustomerService customerService
+@inject ICustomerRegistrationService customerRegistrationService
+@inject Nop.Services.Authentication.External.IExternalAuthenticationService externalAuthenticationService
+@inject Nop.Core.Domain.Gdpr.GdprSettings gdprSettings
+@inject ICustomerAttributeParser customerAttributeParser
+@inject ICustomerRegistrationService customerRegistrationService
+@inject Nop.Services.Authentication.IAuthenticationService authenticationService
+@inject Nop.Services.Helpers.DateTimeSettings dateTimeSettings
+@inject IGenericAttributeService genericAttributeService
+@inject Nop.Core.Domain.Tax.TaxSettings taxSettings
+@inject Nop.Services.Tax.ITaxService taxService
+@inject IWorkflowMessageService workflowMessageService
+@inject Nop.Core.Domain.Localization.LocalizationSettings localizationSettings
+@inject INewsLetterSubscriptionService newsLetterSubscriptionService
+@inject Nop.Services.Gdpr.IGdprService gdprService
+@inject Nop.Core.Domain.Forums.ForumSettings forumSettings
+
+@code{
+
+    private CustomerInfoModel Model { get; set; }
+    private IList<spaCommerce.Models.Directory.StateProvinceModel> states;
+
+
+    private DateTime Date
+    {
+        get
+        {
+            return new DateTime(Model.DateOfBirthYear ?? default,
+                Model.DateOfBirthMonth ?? default,
+                Model.DateOfBirthDay ?? default);
+        }
+
+        set
+        {
+            Model.DateOfBirthDay = value.Day; 
+            Model.DateOfBirthMonth = value.Month;
+            Model.DateOfBirthYear = value.Year;
+        }
+    }
+
+
+    public RenderFragment LeftSection { get; set; } = builder =>
+    {
+        builder.OpenComponent<CustomerNavigation>(0);
+        builder.AddAttribute(1, "SelectedTabId", (int)CustomerNavigationEnum.Addresses);
+        builder.CloseComponent();
+    };
+
+
+    protected override async Task DataRequest()
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        Model = new CustomerInfoModel();
+        Model = customerModelFactory.PrepareCustomerInfoModel(Model, workContext.CurrentCustomer, false);
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var customer = workContext.CurrentCustomer;
+
+        // todo custom customer attributes
+        var customerAttributesXml = ""; //customerController.ParseCustomCustomerAttributes(Model.Form);
+        var customerAttributeWarnings = customerAttributeParser.GetAttributeWarnings(customerAttributesXml);
+
+        if (customerAttributeWarnings.Any())
+        {
+            await jsService.DisplayBarNotification(customerAttributeWarnings.ToArray(), JSMessageType.Error);
+            return;
+        }
+
+        try
+        {
+            //username
+            if (customerSettings.UsernamesEnabled && this.customerSettings.AllowUsersToChangeUsernames)
+            {
+                if (
+                    !customer.Username.Equals(Model.Username.Trim(), StringComparison.InvariantCultureIgnoreCase))
+                {
+                    //change username
+                    customerRegistrationService.SetUsername(customer, Model.Username.Trim());
+
+                    //re-authenticate
+                    //do not authenticate users in impersonation mode
+                    if (workContext.OriginalCustomerIfImpersonated == null)
+                        await authenticationService.SignIn(customer, true);
+                }
+            }
+            //email
+            if (!customer.Email.Equals(Model.Email.Trim(), StringComparison.InvariantCultureIgnoreCase))
+            {
+                //change email
+                var requireValidation = customerSettings.UserRegistrationType == UserRegistrationType.EmailValidation;
+                customerRegistrationService.SetEmail(customer, Model.Email.Trim(), requireValidation);
+
+                //do not authenticate users in impersonation mode
+                if (workContext.OriginalCustomerIfImpersonated == null)
+                {
+                    //re-authenticate (if usernames are disabled)
+                    if (!customerSettings.UsernamesEnabled && !requireValidation)
+                        await authenticationService.SignIn(customer, true);
+                }
+            }
+
+            //properties
+            if (dateTimeSettings.AllowCustomersToSetTimeZone)
+            {
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.TimeZoneIdAttribute,
+                    Model.TimeZoneId);
+            }
+            //VAT number
+            if (taxSettings.EuVatEnabled)
+            {
+                var prevVatNumber = genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.VatNumberAttribute);
+
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.VatNumberAttribute,
+                    Model.VatNumber);
+                if (prevVatNumber != Model.VatNumber)
+                {
+                    var vatNumberStatus = taxService.GetVatNumberStatus(Model.VatNumber, out string _, out string vatAddress);
+                    genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.VatNumberStatusIdAttribute, (int)vatNumberStatus);
+                    //send VAT number admin notification
+                    if (!string.IsNullOrEmpty(Model.VatNumber) && taxSettings.EuVatEmailAdminWhenNewVatSubmitted)
+                        workflowMessageService.SendNewVatSubmittedStoreOwnerNotification(customer,
+                            Model.VatNumber, vatAddress, localizationSettings.DefaultAdminLanguageId);
+                }
+            }
+
+            //form fields
+            if (customerSettings.GenderEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.GenderAttribute, Model.Gender);
+            genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.FirstNameAttribute, Model.FirstName);
+            genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.LastNameAttribute, Model.LastName);
+            if (customerSettings.DateOfBirthEnabled)
+            {
+                var dateOfBirth = Model.ParseDateOfBirth();
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.DateOfBirthAttribute, dateOfBirth);
+            }
+            if (customerSettings.CompanyEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.CompanyAttribute, Model.Company);
+            if (customerSettings.StreetAddressEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.StreetAddressAttribute, Model.StreetAddress);
+            if (customerSettings.StreetAddress2Enabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.StreetAddress2Attribute, Model.StreetAddress2);
+            if (customerSettings.ZipPostalCodeEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.ZipPostalCodeAttribute, Model.ZipPostalCode);
+            if (customerSettings.CityEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.CityAttribute, Model.City);
+            if (customerSettings.CountyEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.CountyAttribute, Model.County);
+            if (customerSettings.CountryEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.CountryIdAttribute, Model.CountryId);
+            if (customerSettings.CountryEnabled && customerSettings.StateProvinceEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.StateProvinceIdAttribute, Model.StateProvinceId);
+            if (customerSettings.PhoneEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.PhoneAttribute, Model.Phone);
+            if (customerSettings.FaxEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.FaxAttribute, Model.Fax);
+
+            //newsletter
+            if (customerSettings.NewsletterEnabled)
+            {
+                //save newsletter value
+                var newsletter = newsLetterSubscriptionService.GetNewsLetterSubscriptionByEmailAndStoreId(customer.Email, storeContext.CurrentStore.Id);
+                if (newsletter != null)
+                {
+                    if (Model.Newsletter)
+                    {
+                        var wasActive = newsletter.Active;
+                        newsletter.Active = true;
+                        newsLetterSubscriptionService.UpdateNewsLetterSubscription(newsletter);
+
+                        //GDPR
+                        if (!wasActive && gdprSettings.GdprEnabled && gdprSettings.LogNewsletterConsent)
+                        {
+                            gdprService.InsertLog(customer, 0, Nop.Core.Domain.Gdpr.GdprRequestType.ConsentAgree, localizationService.GetResource("Gdpr.Consent.Newsletter"));
+                        }
+                    }
+                    else
+                    {
+                        newsLetterSubscriptionService.DeleteNewsLetterSubscription(newsletter);
+
+                        //GDPR
+                        if (gdprSettings.GdprEnabled && gdprSettings.LogNewsletterConsent)
+                        {
+                            gdprService.InsertLog(customer, 0, Nop.Core.Domain.Gdpr.GdprRequestType.ConsentDisagree, localizationService.GetResource("Gdpr.Consent.Newsletter"));
+                        }
+                    }
+                }
+                else
+                {
+                    if (Model.Newsletter)
+                    {
+                        newsLetterSubscriptionService.InsertNewsLetterSubscription(new Nop.Core.Domain.Messages.NewsLetterSubscription
+                        {
+                            NewsLetterSubscriptionGuid = Guid.NewGuid(),
+                            Email = customer.Email,
+                            Active = true,
+                            StoreId = storeContext.CurrentStore.Id,
+                            CreatedOnUtc = DateTime.UtcNow
+                        });
+
+                        //GDPR
+                        if (gdprSettings.GdprEnabled && gdprSettings.LogNewsletterConsent)
+                        {
+                            gdprService.InsertLog(customer, 0, Nop.Core.Domain.Gdpr.GdprRequestType.ConsentAgree, localizationService.GetResource("Gdpr.Consent.Newsletter"));
+                        }
+                    }
+                }
+            }
+
+            if (forumSettings.ForumsEnabled && forumSettings.SignaturesEnabled)
+                genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.SignatureAttribute, Model.Signature);
+
+            //save customer attributes
+            genericAttributeService.SaveAttribute(workContext.CurrentCustomer,
+                NopCustomerDefaults.CustomCustomerAttributes, customerAttributesXml);
+
+            //GDPR
+            if (gdprSettings.GdprEnabled)
+            {
+                var consents = gdprService.GetAllConsents().Where(consent => consent.DisplayOnCustomerInfoPage).ToList();
+                foreach (var consent in consents)
+                {
+                    var previousConsentValue = gdprService.IsConsentAccepted(consent.Id, workContext.CurrentCustomer.Id);
+                    var controlId = $"consent{consent.Id}";
+                    var cbConsent = Model.Form[controlId];
+                    if (!Microsoft.Extensions.Primitives.StringValues.IsNullOrEmpty(cbConsent) && cbConsent.ToString().Equals("on"))
+                    {
+                        //agree
+                        if (!previousConsentValue.HasValue || !previousConsentValue.Value)
+                        {
+                            gdprService.InsertLog(customer, consent.Id, Nop.Core.Domain.Gdpr.GdprRequestType.ConsentAgree, consent.Message);
+                        }
+                    }
+                    else
+                    {
+                        //disagree
+                        if (!previousConsentValue.HasValue || previousConsentValue.Value)
+                        {
+                            gdprService.InsertLog(customer, consent.Id, Nop.Core.Domain.Gdpr.GdprRequestType.ConsentDisagree, consent.Message);
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception exc)
+        {
+            await jsService.DisplayBarNotification(new[] { exc.Message }, JSMessageType.Error);
+        }
+    }
+
+
+    private async Task RemoveExternalAssociation(int id)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+        //ensure it's our record
+        var ear = workContext.CurrentCustomer.ExternalAuthenticationRecords.FirstOrDefault(x => x.Id == id);
+
+        if (ear != null)
+        {
+            externalAuthenticationService.DeleteExternalAuthenticationRecord(ear);
+        }
+
+        StateHasChanged();
+    }
+
+
+    private Task CountryChanged(int countryId)
+    {
+        Model.CountryId = countryId;
+        states = countryModelFactory.GetStatesByCountryId(countryId.ToString(), true);
+        Model.AvailableStates = states.Select(x => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem() { Text = x.name, Value = x.id.ToString() }).ToList();
+        //StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+
+    private async Task ConsentAccepted(bool accepted, int consentId)
+    {
+
+        var consent = Model.GdprConsents.FirstOrDefault(x => x.Id == consentId);
+        if (consent != null)
+        {
+            if (!accepted)
+            {
+                await jsService.Alert(consent.RequiredMessage);
+            }
+            consent.Accepted = accepted;
+        }
+    }
+}
+<div class="page account-page customer-info-page">
+    <div class="page-title">
+        <h1>@T("Account.MyAccount") - @T("Account.CustomerInfo")</h1>
+    </div>
+    <div class="page-body">
+        @if (needStub)
+        {
+            <LoadingStub />
+        }
+        else if (Model != null)
+        {
+
+            //title
+            Html.AddTitleParts(T("PageTitle.Account").Text);
+            //page class
+            Html.AppendPageCssClassParts("html-account-page");
+            Html.AppendPageCssClassParts("html-customer-info-page");
+
+
+            <EditForm Model="Model" OnValidSubmit="OnValidSubmit" method="post">
+                <FluentValidationValidator />
+                <ValidationSummary />
+                <div class="fieldset">
+                    <div class="title">
+                        <strong>@T("Account.YourPersonalDetails")</strong>
+                    </div>
+                    <div class="form-fields">
+                        @if (Model.GenderEnabled)
+                        {
+                            <div class="inputs">
+                                <label>@T("Account.Fields.Gender"):</label>
+                                <div class="gender">
+                                    <span class="male">
+                                        <input type="radio" asp-for="Gender" value="M" checked="@(Model.Gender == "M")" id="gender-male" />
+                                        <label class="forcheckbox" for="gender-male">@T("Account.Fields.Gender.Male")</label>
+                                    </span>
+                                    <span class="female">
+                                        <input type="radio" asp-for="Gender" value="F" checked="@(Model.Gender == "F")" id="gender-female" />
+                                        <label class="forcheckbox" for="gender-female">@T("Account.Fields.Gender.Female")</label>
+                                    </span>
+                                </div>
+                            </div>
+                        }
+                        <div class="inputs">
+                            <LabelText For="@(()=>Model.FirstName)" Postfix=":"></LabelText>
+                            <InputText type="text" @bind-Value="Model.FirstName" />
+                            <Required />
+                            <ValidationMessage For="@(() => Model.FirstName)"></ValidationMessage>
+                        </div>
+                        <div class="inputs">
+                            <LabelText For="@(()=>Model.LastName)" Postfix=":"></LabelText>
+                            <InputText type="text" @bind-Value="Model.LastName" />
+                            <Required />
+                            <ValidationMessage For="@(() => Model.LastName)"></ValidationMessage>
+                        </div>
+                        @if (Model.DateOfBirthEnabled)
+                        {
+                            <div class="inputs date-of-birth">
+                                <label>@T("Account.Fields.DateOfBirth"):</label>
+                                @*<nop-date-picker asp-day-name="@Html.NameFor(x => x.DateOfBirthDay)"
+                                    asp-month-name="@Html.NameFor(x => x.DateOfBirthMonth)"
+                                    asp-year-name="@Html.NameFor(x => x.DateOfBirthYear)"
+                                    asp-begin-year="@(DateTime.Now.Year - 110)"
+                                    asp-end-year="@(DateTime.Now.Year)"
+                                    asp-selected-day="@Model.DateOfBirthDay"
+                                    asp-selected-month="@Model.DateOfBirthMonth"
+                                    asp-selected-year="@Model.DateOfBirthYear" />*@
+
+                                <InputDate @bind-Value="@Date" />
+                                
+                                @*<InputDate Value="new DateTime(Model.DateOfBirthYear ?? default, Model.DateOfBirthMonth ?? default, Model.DateOfBirthDay ?? default)"
+                                           ValueExpression="@(() => Date)"
+                                           ValueChanged="@((DateTime e) => { Model.DateOfBirthDay = e.Day; Model.DateOfBirthMonth = e.Month; Model.DateOfBirthYear = e.Year; })" type="date" />*@
+
+                                @if (Model.DateOfBirthRequired)
+                                {
+                                    <Required />
+                                }
+                                <ValidationMessage For="@(() => Model.DateOfBirthDay)" />
+                                <ValidationMessage For="@(() => Model.DateOfBirthMonth)" />
+                                <ValidationMessage For="@(() => Model.DateOfBirthYear)" />
+                            </div>
+                        }
+                        <div class="inputs">
+                            <LabelText For="@(()=>Model.Email)" Postfix=":"></LabelText>
+                            <InputText type="email" @bind-Value="Model.Email" />
+                            <Required />
+                            <ValidationMessage For="@(() => Model.Email)" />
+                        </div>
+                        @if (!string.IsNullOrEmpty(Model.EmailToRevalidate))
+                        {
+                            <div class="inputs">
+                                <LabelText For="@(()=>Model.EmailToRevalidate)"></LabelText>
+                                <span class="email-to-revalidate">@Model.EmailToRevalidate</span>
+                                <span class="email-to-revalidate-note">
+                                    <em>@T("Account.Fields.EmailToRevalidate.Note")</em>
+                                </span>
+                            </div>
+                        }
+                        @if (Model.UsernamesEnabled)
+                        {
+                            if (Model.AllowUsersToChangeUsernames)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Username)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.Username" />
+                                    <Required />
+                                    <ValidationMessage For="@(() => Model.Username)" />
+                                    @if (Model.CheckUsernameAvailabilityEnabled)
+                                    {
+                                        <_CheckUsernameAvailability />
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Username)" Postfix=":"></LabelText>
+                                    <span class="readonly-username">@Model.Username</span>
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+                @if (Model.CompanyEnabled || Model.DisplayVatNumber)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.CompanyDetails")</strong>
+                        </div>
+                        <div class="form-fields">
+                            @if (Model.CompanyEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Company)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.Company" />
+                                    @if (Model.CompanyRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.Company)" />
+                                </div>
+                            }
+                            @if (Model.DisplayVatNumber)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.VatNumber)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.VatNumber" />
+                                    <span class="vat-status">@Model.VatNumberStatusNote</span>
+                                    <span class="vat-note">
+                                        <em>@T("Account.Fields.VatNumber.Note")</em>
+                                    </span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (Model.StreetAddressEnabled ||
+      Model.StreetAddress2Enabled ||
+      Model.ZipPostalCodeEnabled ||
+      Model.CityEnabled ||
+      Model.CountyEnabled ||
+      Model.CountryEnabled)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.YourAddress")</strong>
+                        </div>
+                        <div class="form-fields">
+                            @if (Model.StreetAddressEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.StreetAddress)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.StreetAddress" />
+                                    @if (Model.StreetAddressRequired)
+                                    {
+                                        <Required />
+
+                                    }
+                                    <ValidationMessage For="@(() => Model.StreetAddress)" />
+                                </div>
+                            }
+                            @if (Model.StreetAddress2Enabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.StreetAddress2)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.StreetAddress2" />
+                                    @if (Model.StreetAddress2Required)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.StreetAddress2)" />
+
+                                </div>
+                            }
+                            @if (Model.ZipPostalCodeEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.ZipPostalCode)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.ZipPostalCode" />
+                                    @if (Model.ZipPostalCodeRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.ZipPostalCode)" />
+                                </div>
+                            }
+                            @if (Model.CityEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.City)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.City" />
+                                    @if (Model.CityRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.City)" />
+                                </div>
+                            }
+                            @if (Model.CountyEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.County)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.County" />
+                                    @if (Model.CountyRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.County)" />
+                                </div>
+                            }
+                            @if (Model.CountryEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.CountryId)" Postfix=":" />
+                                    <InputSelect Value="Model.CountryId" ValueExpression="@(() => Model.CountryId)" ValueChanged="@((int e) => CountryChanged(e))">
+                                        @foreach (var country in Model.AvailableCountries)
+                                        {
+                                            <option value="@country.Value" selected="@country.Selected">@country.Text</option>
+                                        }
+                                    </InputSelect>
+                                    @if (Model.CountryRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.CountryId)" />
+                                </div>
+                            }
+                            @if (Model.CountryEnabled && Model.StateProvinceEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.StateProvinceId)" Postfix=":" />
+                                    <InputSelect @bind-Value="Model.StateProvinceId">
+                                        @foreach (var provincy in Model.AvailableStates)
+                                                    {
+                                            <option value="@provincy.Value" selected="@provincy.Selected">@provincy.Text</option>
+                                                    }
+                                        /**/
+                                        /**/
+                                    </InputSelect>
+                                    @if (Model.StateProvinceRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.StateProvinceId)" />
+                                    <span id="states-loading-progress" style="display: none;" class="please-wait">@T("Common.Wait...")</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (Model.PhoneEnabled || Model.FaxEnabled)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.YourContactInformation")</strong>
+                        </div>
+                        <div class="form-fields">
+                            @if (Model.PhoneEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Phone)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.Phone" />
+                                    @if (Model.PhoneRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.Phone)" />
+                                </div>
+                            }
+                            @if (Model.FaxEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Fax)" Postfix=":"></LabelText>
+                                    <InputText type="text" @bind-Value="Model.Fax" />
+                                    @if (Model.FaxRequired)
+                                    {
+                                        <Required />
+                                    }
+                                    <ValidationMessage For="@(() => Model.Fax)" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (Model.NewsletterEnabled || Model.CustomerAttributes.Count > 0)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.Options")</strong>
+                        </div>
+                        <div class="form-fields">
+                            @if (Model.NewsletterEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Newsletter)" Postfix=":"></LabelText>
+                                    <InputCheckbox @bind-Value="Model.Newsletter" />
+                                    <ValidationMessage For="@(() => Model.Newsletter)" />
+                                </div>
+                            }
+                            @if (Model.CustomerAttributes.Count > 0)
+                            {
+                                <_CustomerAttributes Model="Model.CustomerAttributes" />
+                            }
+                        </div>
+                    </div>
+                }
+                @if (Model.AllowCustomersToSetTimeZone || Model.SignatureEnabled)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.Preferences")</strong>
+                        </div>
+                        <div class="form-fields">
+                            @if (Model.AllowCustomersToSetTimeZone)
+                            {
+                                <div class="inputs">
+
+                                    <LabelText For="@(()=>Model.TimeZoneId)" Postfix=":"></LabelText>
+                                    <InputSelect @bind-Value="Model.TimeZoneId">
+                                        @foreach (var tz in Model.AvailableTimeZones)
+                                                    {
+                                            <option value="@tz.Value" selected="@tz.Selected">@tz.Text</option>
+                                                    }
+                                        /**/
+                                        /**/
+                                    </InputSelect>
+                                    <ValidationMessage For="@(() => Model.TimeZoneId)" />
+                                </div>
+                            }
+                            @if (Model.SignatureEnabled)
+                            {
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Signature)" Postfix=":" />
+                                    <InputTextArea @bind-Value="@Model.Signature" class="account-signature-text"></InputTextArea>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                @if (Model.NumberOfExternalAuthenticationProviders > 0)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.AssociatedExternalAuth")</strong>
+                        </div>
+                        @if (Model.AssociatedExternalAuthRecords.Count > 0)
+                        {
+                            //existing associated external records
+                            <div class="table-wrapper">
+                                <table class="data-table">
+                                    <colgroup>
+                                        <col />
+                                        <col />
+                                        <col />
+                                    </colgroup>
+                                    <thead>
+                                        <tr>
+                                            <th class="auth-method-name">
+                                                @T("Account.AssociatedExternalAuth.AuthMethodName")
+                                            </th>
+                                            <th class="email">
+                                                @T("Account.AssociatedExternalAuth.Email")
+                                            </th>
+                                            <th class="external-id">
+                                                @T("Account.AssociatedExternalAuth.ExternalIdentifier")
+                                            </th>
+                                            @if (Model.AllowCustomersToRemoveAssociations)
+                                            {
+                                                <th class="remove">
+                                                    @T("Account.AssociatedExternalAuth.Remove")
+                                                </th>
+                                            }
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var item in Model.AssociatedExternalAuthRecords)
+                                        {
+                                            <tr>
+                                                <td class="auth-method-name">
+                                                    @item.AuthMethodName
+                                                </td>
+                                                <td class="email">
+                                                    @item.Email
+                                                </td>
+                                                <td class="external-id">
+                                                    @CommonHelper.EnsureMaximumLength(item.ExternalIdentifier, 40, "...")
+                                                </td>
+                                                @if (Model.AllowCustomersToRemoveAssociations)
+                                                {
+                                                    <td class="remove">
+                                                        <a href="#" @onclick="@(e=> RemoveExternalAssociation(item.Id))">@T("Account.AssociatedExternalAuth.Remove")</a>
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        }
+                        @if (Model.NumberOfExternalAuthenticationProviders > Model.AssociatedExternalAuthRecords.Count)
+                        {
+                            //we can add more external records
+                            var loginUrl = Url.RouteUrl("Login", null, webHelper.CurrentRequestProtocol);
+                            <div class="form-fields add-more-external-records">
+                                @T("Account.AssociatedExternalAuth.AddMoreRecords")
+                                <a href="@loginUrl">@loginUrl</a>
+                            </div>
+                        }
+                    </div>
+                }
+
+                @if (Model.GdprConsents.Count > 0)
+                {
+                    <div class="fieldset">
+                        <div class="title">
+                            <strong>@T("Account.UserAgreement")</strong>
+                        </div>
+                        <div class="form-fields">
+                            @foreach (var consent in Model.GdprConsents)
+                            {
+                                if (consent.IsRequired)
+                                {
+                                    @*<script asp-location="Footer">
+                                            $(document).ready(function() {
+                                                $('#save-info-button').on('click', function() {
+                                                    if ($('#consent@(consent.Id)').is(':checked')) {
+                                                            //do some stuff
+                                                            return true;
+                                                        } else {
+                                                            //just show validation errors, don't post
+                                                       alert('@Html.Raw(JavaScriptEncoder.Default.Encode(consent.RequiredMessage))');
+                                                            return false;
+                                                        }
+                                                    });
+                                            });
+                                        </script>*@
+                                }
+                                <div class="inputs accept-consent">
+                                    <InputCheckbox @key="consent.Id" Value="@consent.Accepted" ValueExpression="@(() => consent.Accepted)" ValueChanged="@(e => ConsentAccepted(e, consent.Id))" id="@("consent" + consent.Id.ToString())" type="checkbox" name="@("consent" + consent.Id.ToString())" checked="@consent.Accepted" />
+                                    <label for="consent@(consent.Id)">@consent.Message</label>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+                <div class="buttons">
+                    <input type="submit" id="save-info-button" value="@T("Common.Save")" name="save-info-button" class="button-1 save-customer-info-button" />
+                </div>
+            </EditForm>
+
+        }
+    </div>
+</div>

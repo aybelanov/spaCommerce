@@ -1,0 +1,7 @@
+﻿@model LogoModel
+@{
+    Model.LogoPath = Url.Content("~/Themes/SkywellCustom/Content/images/logo.svg");
+ }
+<a href="@Url.RouteUrl("HomePage")">
+    <img title="" alt="@Model.StoreName" src="@Model.LogoPath">
+</a>

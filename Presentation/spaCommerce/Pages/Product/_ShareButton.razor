@@ -1,0 +1,24 @@
+﻿@inherits SpaComponent
+@inject IJSRuntime jsRuntime
+
+@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("ShareButton", Model.PageShareCode);
+        }
+        catch { }
+    }
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.PageShareCode))
+{
+    <div class="product-share-button">
+        @*@((MarkupString)Html.Raw(Model.PageShareCode).ToHtmlString())*@
+    </div>
+}

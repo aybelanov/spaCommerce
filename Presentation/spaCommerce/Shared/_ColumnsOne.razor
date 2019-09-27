@@ -1,0 +1,9 @@
+﻿@layout _Root
+
+@RenderSection("Breadcrumb")
+
+<div class="center-1">
+    <Widget WidgetZone="@PublicWidgetZones.MainColumnBefore" />
+    @Body
+    <Widget WidgetZone="@PublicWidgetZones.MainColumnAfter" />
+</div>

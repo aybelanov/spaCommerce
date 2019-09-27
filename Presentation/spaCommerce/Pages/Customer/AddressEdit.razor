@@ -1,0 +1,125 @@
+﻿@page "/customer/addressedit/{addressId:int}"
+@layout _ColumnsTwo
+@using Nop.Services.Directory
+@using Nop.Core.Domain.Common
+@inject IWorkContext workContext
+@inject NavigationManager uriHelper
+@inject ICustomerService customerService
+@inject IAddressAttributeParser addressAttributeParser
+@inject IAddressModelFactory addressModelFactory
+@inject IJSService jsService
+@inject ICountryService countryService
+@inject AddressSettings addressSettings
+@inject IAddressService addressService
+
+
+@code{
+
+    private CustomerAddressEditModel Model { get; set; }
+
+    public RenderFragment LeftSection { get; set; } =@<CustomerNavigation SelectedTabId="(int)CustomerNavigationEnum.Addresses" />;
+
+    [Parameter] public int AddressId { get; set; }
+
+    protected override async Task DataRequest()
+    {
+        if (AddressId <= 0)
+        {
+            await jsService.DisplayBarNotification(new[] { "It is a forbidden address-id" }, JSMessageType.Error);
+            //address is not found
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerAddresses"));
+            return;
+        }
+
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var customer = workContext.CurrentCustomer;
+        //find address (ensure that it belongs to the current customer)
+        var address = customer.Addresses.FirstOrDefault(a => a.Id == AddressId);
+        if (address == null)
+        {
+            //address is not found
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerAddresses"));
+            return;
+        }
+
+
+        Model = new CustomerAddressEditModel();
+        addressModelFactory.PrepareAddressModel(Model.Address,
+        address: address,
+        excludeProperties: false,
+        addressSettings: addressSettings,
+        loadCountries: () => countryService.GetAllCountries(workContext.WorkingLanguage.Id));
+
+    }
+
+
+    private async Task OnValidSubmit(EditContext context)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var customer = workContext.CurrentCustomer;
+        //find address (ensure that it belongs to the current customer)
+        var address = customer.Addresses.FirstOrDefault(a => a.Id == AddressId);
+        if (address == null)
+        {
+            //address is not found
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerAddresses"));
+            return;
+        }
+
+        //custom address attributes
+        //todo implement CustomAddressAttributes
+        var customAttributes = addressAttributeParser.ParseCustomAddressAttributes(Model.Form ?? new FormCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>()));
+        var customAttributeWarnings = addressAttributeParser.GetAttributeWarnings(customAttributes);
+        if (customAttributeWarnings.Any())
+        {
+            await jsService.DisplayBarNotification(customAttributeWarnings.ToArray(), JSMessageType.Error);
+            StateHasChanged();
+            return;
+        }
+
+        address = Model.Address.ToEntity(address);
+        address.CustomAttributes = customAttributes;
+        addressService.UpdateAddress(address);
+        uriHelper.NavigateTo(Url.RouteUrl("CustomerAddresses"));
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(T("PageTitle.Account").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-account-page");
+    Html.AppendPageCssClassParts("html-address-edit-page");
+    <EditForm Model="Model.Address" OnValidSubmit="OnValidSubmit" method="post">
+        <div class="page account-page address-edit-page">
+            <div class="page-title">
+                <h1>@T("Account.MyAccount") - @T("Account.CustomerAddresses.Edit")</h1>
+            </div>
+            <div class="page-body">
+                <FluentValidationValidator />
+                <ValidationSummary />
+                <_CreateOrUpdateAddress Model="@Model.Address" />
+                <div class="buttons">
+                    <input type="submit" class="button-1 save-address-button" value="@T("Common.Save")" />
+                </div>
+            </div>
+        </div>
+    </EditForm>
+}

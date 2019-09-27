@@ -1,0 +1,134 @@
+﻿@inject IProductService productService
+@inject IWorkContext workContext
+@inject CatalogSettings catalogSettings
+@inject ILocalizationService localizationService
+@inject IJSRuntime jsRuntime
+
+
+@code{
+
+    // todo debugging
+    [Parameter] public ProductReviewHelpfulnessModel Model { get; set; }
+
+
+    private async Task SetProductReviewHelpfulness(int productReviewId, bool washelpful)
+    {
+
+        var productReview = productService.GetProductReviewById(productReviewId);
+        if (productReview == null)
+            throw new ArgumentException("No product review found with the specified id");
+
+        if (workContext.CurrentCustomer.IsGuest() && !catalogSettings.AllowAnonymousUsersToReviewProduct)
+        {
+            try
+            {
+                await jsRuntime.InvokeAsync<object>("ProductReviewHelpfulness", new
+                {
+                    ProductReviewId = Model.ProductReviewId,
+                    Result = localizationService.GetResource("Reviews.Helpfulness.OnlyRegistered"),
+                    TotalYes = productReview.HelpfulYesTotal.ToString(),
+                    TotalNo = productReview.HelpfulNoTotal.ToString()
+                });
+            }
+            catch { }
+            return;
+        }
+
+        //customers aren't allowed to vote for their own reviews
+        if (productReview.CustomerId == workContext.CurrentCustomer.Id)
+        {
+            try
+            {
+                await jsRuntime.InvokeAsync<object>("ProductReviewHelpfulness", new
+                {
+                    ProductReviewId = Model.ProductReviewId,
+                    Result = localizationService.GetResource("Reviews.Helpfulness.YourOwnReview"),
+                    TotalYes = productReview.HelpfulYesTotal.ToString(),
+                    TotalNo = productReview.HelpfulNoTotal.ToString()
+                });
+            }
+            catch { }
+            return;
+        }
+
+        //delete previous helpfulness
+        var prh = productReview.ProductReviewHelpfulnessEntries
+            .FirstOrDefault(x => x.CustomerId == workContext.CurrentCustomer.Id);
+        if (prh != null)
+        {
+            //existing one
+            prh.WasHelpful = washelpful;
+        }
+        else
+        {
+            //insert new helpfulness
+            prh = new ProductReviewHelpfulness
+            {
+                ProductReviewId = productReview.Id,
+                CustomerId = workContext.CurrentCustomer.Id,
+                WasHelpful = washelpful,
+            };
+            productReview.ProductReviewHelpfulnessEntries.Add(prh);
+        }
+
+        productService.UpdateProduct(productReview.Product);
+
+        //new totals
+        productReview.HelpfulYesTotal = productReview.ProductReviewHelpfulnessEntries.Count(x => x.WasHelpful);
+        productReview.HelpfulNoTotal = productReview.ProductReviewHelpfulnessEntries.Count(x => !x.WasHelpful);
+        productService.UpdateProduct(productReview.Product);
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("ProductReviewHelpfulness", new
+            {
+                ProductReviewId = Model.ProductReviewId,
+                Result = localizationService.GetResource("Reviews.Helpfulness.SuccessfullyVoted"),
+                TotalYes = productReview.HelpfulYesTotal.ToString(),
+                TotalNo = productReview.HelpfulNoTotal.ToString()
+            });
+        }
+        catch { }
+    }
+}
+
+<div class="product-review-helpfulness">
+    <span class="question">@T("Reviews.Helpfulness.WasHelpful?")</span>
+    <span class="vote-options">
+        <span id="vote-yes-@(Model.ProductReviewId)" @onclick="@(e=> SetProductReviewHelpfulness(Model.ProductReviewId, true))" class="vote">@T("Common.Yes")</span>
+        <span id="vote-no-@(Model.ProductReviewId)"  @onclick="@(e=>SetProductReviewHelpfulness(Model.ProductReviewId, false))" class="vote">@T("Common.No")</span>
+    </span>
+    <span class="vote-stats">
+        (<span id="helpfulness-vote-yes-@(Model.ProductReviewId)" >@(Model.HelpfulYesTotal)</span>/<span id="helpfulness-vote-no-@(Model.ProductReviewId)">@(Model.HelpfulNoTotal)</span>)
+    </span>
+    <span id="helpfulness-vote-result-@(Model.ProductReviewId)" class="result"></span>
+
+    @*<script asp-location="Footer">
+            $(document).ready(function () {
+                $('#vote-yes-@(Model.ProductReviewId)').on('click', function () {
+                    setProductReviewHelpfulness@(Model.ProductReviewId)('true');
+                });
+                $('#vote-no-@(Model.ProductReviewId)').on('click', function () {
+                    setProductReviewHelpfulness@(Model.ProductReviewId)('false');
+                });
+            });
+
+            function setProductReviewHelpfulness@(Model.ProductReviewId)(wasHelpful){
+                $.ajax({
+                    cache: false,
+                    type: "POST",
+                    url: "@(Url.RouteUrl("SetProductReviewHelpfulness"))",
+                    data: { "productReviewId": @(Model.ProductReviewId), "washelpful": wasHelpful },
+                    success: function (data) {
+                        $("#helpfulness-vote-yes-@(Model.ProductReviewId)").html(data.TotalYes);
+                        $("#helpfulness-vote-no-@(Model.ProductReviewId)").html(data.TotalNo);
+                        $("#helpfulness-vote-result-@(Model.ProductReviewId)").html(data.Result);
+
+                        $('#helpfulness-vote-result-@(Model.ProductReviewId)').fadeIn("slow").delay(1000).fadeOut("slow");
+                    },
+                    error:function (xhr, ajaxOptions, thrownError){
+                        alert('Failed to vote. Please refresh the page and try one more time.');
+                    }
+                });
+            }
+        </script>*@
+</div>

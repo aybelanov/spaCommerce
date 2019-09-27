@@ -1,0 +1,41 @@
+﻿@using Nop.Core.Domain.Catalog
+
+@code{
+    [Parameter] public ProductDetailsModel Model { get; set; }
+
+}
+
+<div class="additional-details">
+    @*SKU*@
+    @if ((!string.IsNullOrWhiteSpace(Model.Sku) || Model.ManageInventoryMethod == ManageInventoryMethod.ManageStockByAttributes) && Model.ShowSku)
+    {
+        <div class="sku" style=@(string.IsNullOrWhiteSpace(Model.Sku) ? "display:none" : null)>
+            <span class="label">@T("Products.Sku"):</span>
+            <span class="value" itemprop="sku" id="sku-@Model.Id">@Model.Sku</span>
+        </div>
+    }
+    @*Manufacturer part number*@
+    @if ((!string.IsNullOrWhiteSpace(Model.ManufacturerPartNumber) || Model.ManageInventoryMethod == ManageInventoryMethod.ManageStockByAttributes) && Model.ShowManufacturerPartNumber)
+    {
+        <div class="manufacturer-part-number" style=@(string.IsNullOrWhiteSpace(Model.ManufacturerPartNumber) ? "display:none" : null)>
+            <span class="label">@T("Products.ManufacturerPartNumber"):</span>
+            <span class="value" id="mpn-@Model.Id">@Model.ManufacturerPartNumber</span>
+        </div>
+    }
+    @*GTIN*@
+    @if ((!string.IsNullOrWhiteSpace(Model.Gtin) || Model.ManageInventoryMethod == ManageInventoryMethod.ManageStockByAttributes) && Model.ShowGtin)
+    {
+        <div class="gtin" style="@(string.IsNullOrWhiteSpace(Model.Gtin) ? "display:none" : null)">
+            <span class="label">@T("Products.GTIN"):</span>
+            <span class="value" id="gtin-@Model.Id">@Model.Gtin</span>
+        </div>
+    }
+    @*Vendor*@
+    @if (Model.ShowVendor)
+    {
+        <div class="product-vendor">
+            <span class="label">@T("Products.Vendor"):</span>
+            <span class="value"><a href="@Url.RouteUrl("Vendor", new { SeName = Model.VendorModel.SeName })">@Model.VendorModel.Name</a></span>
+        </div>
+    }
+</div>

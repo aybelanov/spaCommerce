@@ -1,0 +1,66 @@
+﻿@page "/registerresult/{resultId:int}"
+@layout _ColumnsOne
+@inject ICustomerModelFactory customerModelFactory
+@inject NavigationManager uriHelper
+
+@code{
+
+    [Parameter] public int resultId { get; set; }
+
+    private RegisterResultModel Model { get; set; }
+
+
+    protected override Task DataRequest()
+    {
+        if (resultId >= 0)
+        {
+            Model = customerModelFactory.PrepareRegisterResultModel(resultId);
+        }
+
+        return Task.CompletedTask;
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        var returnUrl = uriHelper.GetQueryParameterValues<string>("returnUrl").FirstOrDefault();
+        if (string.IsNullOrEmpty(returnUrl))
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        uriHelper.NavigateTo(Url.RouteUrl(returnUrl));
+        await Task.CompletedTask;
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(T("PageTitle.Register").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-registration-result-page");
+
+<EditForm Model="Model" method="post">
+    <FluentValidationValidator />
+    <ValidationSummary />
+    <div class="page registration-result-page">
+        <div class="page-title">
+            <h1>@T("Account.Register")</h1>
+        </div>
+        <div class="page-body">
+            <div class="result">
+                @Model.Result
+            </div>
+            <div class="buttons">
+                <input type="submit" name="register-continue" class="button-1 register-continue-button" value="@T("Account.Register.Result.Continue")" />
+            </div>
+        </div>
+    </div>
+</EditForm>
+}

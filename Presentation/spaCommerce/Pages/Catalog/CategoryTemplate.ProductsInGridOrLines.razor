@@ -1,0 +1,218 @@
+﻿@page "/{category:urlservice}"
+@inherits SpaGenericPageComponent
+@using Microsoft.AspNetCore.WebUtilities
+@using Nop.Core.Domain.Catalog
+@using Nop.Core.Domain.Common
+@using Nop.Core.Domain.Customers
+@using Nop.Core.Domain.Seo
+@using Nop.Core;
+@inject SeoSettings seoSettings
+@inject IHttpContextAccessor contextAccessor
+@inject NavigationManager uriHelper
+@inject Nop.Services.Catalog.ICategoryService categoryService
+@inject Nop.Services.Security.IAclService aclService
+@inject Nop.Services.Stores.IStoreMappingService storeMappingService
+@inject IPermissionService permissionService
+@inject Nop.Services.Common.IGenericAttributeService genericAttributeService
+@inject IWorkContext workContext
+@inject IWebHelper webHelper
+@inject IStoreContext storeContext
+@inject Nop.Web.Framework.UI.IPageHeadBuilder pageHeadBuilder
+@inject Nop.Services.Logging.ICustomerActivityService customerActivityService
+@inject Nop.Services.Localization.ILocalizationService localizationService
+@inject ICatalogModelFactory catalogModelFactory
+@inject CommonSettings commonSettings
+
+
+
+@code{
+    protected CategoryModel Model { get; set; }
+    protected CatalogPagingFilteringModel Command { get; set; }
+    protected Category category;
+    private string oldCategoryName;
+
+    protected override Task DataRequest()
+    {
+        try
+        {
+            category = categoryService.GetCategoryById(CurrentUrlRecord.EntityId);
+            if (category == null || category.Deleted)
+            {
+                uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+                return Task.CompletedTask;
+            }
+
+            var notAvailable =
+                //published?
+                !category.Published ||
+                //ACL (access control list)
+                !aclService.Authorize(category) ||
+                //Store mapping
+                !storeMappingService.Authorize(category);
+            //Check whether the current user has a "Manage categories" permission (usually a store owner)
+            //We should allows him (her) to use "Preview" functionality
+            if (notAvailable && !permissionService.Authorize(StandardPermissionProvider.ManageCategories))
+            {
+                uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+                return Task.CompletedTask;
+            }
+
+            try
+            {
+                // TODO 'Continue shopping' URL
+                genericAttributeService.SaveAttribute(workContext.CurrentCustomer,
+                    NopCustomerDefaults.LastContinueShoppingPageAttribute,
+                    uriHelper.Uri, storeContext.CurrentStore.Id);
+            }
+            catch { }
+
+            ////display "edit" (manage) link
+            //if (permissionService.Authorize(StandardPermissionProvider.AccessAdminPanel) && permissionService.Authorize(StandardPermissionProvider.ManageCategories))
+            //    pageHeadBuilder.AddEditPageUrl(Url.GetPathByAction("Edit", "Category", new { id = category.Id, area = AreaNames.Admin }));
+
+            //activity log
+            customerActivityService.InsertActivity("PublicStore.ViewCategory",
+                    string.Format(localizationService.GetResource("ActivityLog.PublicStore.ViewCategory"), category.Name), category);
+
+        }
+        catch { }
+
+        Command = uriHelper.SetModelFromQuery<CatalogPagingFilteringModel>();
+        category = categoryService.GetCategoryById(CurrentUrlRecord.EntityId);
+
+        oldCategoryName = Model?.Name;
+        Model = catalogModelFactory.PrepareCategoryModel(category, Command);
+
+        //template
+        //var templateViewPath = catalogModelFactory.PrepareCategoryTemplateViewPath(category.CategoryTemplateId);
+
+        return Task.CompletedTask;
+    }
+
+    public RenderFragment BreadcrumbSection { get; set; } =@<_CategoryBreadcrumb />;
+}
+
+
+@if (needStub && CommonParams.Router.IsAbsolutePathChanged())
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+
+    ////title
+    //Html.AddTitleParts(!string.IsNullOrEmpty(Model.MetaTitle) ? Model.MetaTitle : Model.Name);
+    ////meta
+    //Html.AddMetaDescriptionParts(Model.MetaDescription);
+    //Html.AddMetaKeywordParts(Model.MetaKeywords);
+    ////page class
+    //Html.AppendPageCssClassParts("html-category-page");
+
+    //if (seoSettings.CanonicalUrlsEnabled)
+    //{
+    //    // TODO canonical url
+    //    var categoryUrl = Url.RouteUrl("Category", new { SeName = Model.SeName });
+    //    Html.AddCanonicalUrlParts(categoryUrl, seoSettings.QueryStringInCanonicalUrlsEnabled);
+    //}
+    <div class="page category-page">
+        <div class="page-title">
+            <h1>@Model.Name</h1>
+        </div>
+        <div class="page-body">
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsBeforeSubcategories" />
+            @*subcategories*@
+            @if (Model.SubCategories.Count > 0)
+            {
+                <div class="category-grid sub-category-grid">
+                    <div class="item-grid">
+                        @foreach (var item in Model.SubCategories)
+                        {
+                            <div class="item-box">
+                                <div class="sub-category-item">
+                                    <h2 class="title">
+                                        <a href="@Url.RouteUrl("Category", new { SeName = item.SeName })" title="@item.PictureModel.Title">
+                                            @item.Name
+                                        </a>
+                                    </h2>
+                                    <div class="picture">
+                                        <a href="@Url.RouteUrl("Category", new { SeName = item.SeName })" title="@item.PictureModel.Title">
+                                            <img alt="@item.PictureModel.AlternateText" src="@item.PictureModel.ImageUrl" title="@item.PictureModel.Title" />
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsTop" />
+            @*description*@
+            @if (!string.IsNullOrWhiteSpace(Model.Description))
+            {
+                <div class="category-description">
+                    @((MarkupString)Model.Description)
+                </div>
+            }
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsBeforeFeaturedProducts" />
+            @*featured products*@
+            @if (Model.FeaturedProducts.Count > 0)
+            {
+                <div class="product-grid featured-product-grid">
+                    <div class="title">
+                        <strong>@T("Products.FeaturedProducts")</strong>
+                    </div>
+                    <div class="item-grid">
+                        @foreach (var item in Model.FeaturedProducts)
+                        {
+                            <div class="item-box">
+                                <_ProductBox Model="@item" />
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsAfterFeaturedProducts" />
+            @if (Model.Products.Count > 0)
+            {
+                <_CatalogSelectors Model="@Model.PagingFilteringContext" />
+            }
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsBeforeFilters" />
+            <div class="product-filters">
+                @*filtering*@
+                @if (Model.PagingFilteringContext.PriceRangeFilter.Enabled)
+                {
+                    <_FilterPriceBox Model="@Model.PagingFilteringContext.PriceRangeFilter" />
+                }
+                @*filtering*@
+                @if (Model.PagingFilteringContext.SpecificationFilter.Enabled)
+                {
+                    <_FilterSpecsBox Model="@Model.PagingFilteringContext.SpecificationFilter" />
+                }
+            </div>
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsBeforeProductList" />
+            <Pager Model="@Model.PagingFilteringContext" />
+            @if (needStub)
+            {
+                <LoadingStub />
+            }
+            else
+            {
+                @if (Model.Products.Count > 0)
+                {
+                    <div class="@(Model.PagingFilteringContext.ViewMode == "list" ? "product-list" : "product-grid")">
+                        <div class="item-grid">
+                            @foreach (var product in Model.Products)
+                            {
+                                <div class="item-box">
+                                    <_ProductBox Model="@product" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+            <Pager Model="@Model.PagingFilteringContext" />
+            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.CategoryDetailsBottom" />
+        </div>
+    </div>
+}

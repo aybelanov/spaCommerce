@@ -1,0 +1,101 @@
+﻿@inject INewsletterModelFactory _factory
+@inject IJSRuntime _jsRuntime
+@inject Nop.Core.Domain.Customers.CustomerSettings _customerSettings
+@inject INewsletterModelFactory _newsletterModelFactory
+@inject INewsletterComponentService newsletterService
+@inject IJSRuntime js
+
+@code{
+
+    private NewsletterBoxModel Model;
+
+
+    protected override async Task DataRequest()
+    {
+        try
+        {
+            Model = await Task.FromResult<NewsletterBoxModel>(_factory.PrepareNewsletterBoxModel());
+        }
+        catch { }
+    }
+
+
+    protected async Task NewsletterSubscribeButtonClick(MouseEventArgs args)
+    {
+        try
+        {
+            await js.InvokeAsync<object>("NewsLetterSurscribe.SubscribeProgressShow");
+
+            bool allowSubscribe = Model.AllowToUnsubscribe
+                ? allowSubscribe = await js.InvokeAsync<bool>("NewsLetterSurscribe.IsChecked")
+                : allowSubscribe = false;
+
+
+            var data = await Task.FromResult<(bool Success, string Result)>(newsletterService.SubscribeNewsletter(Model.NewsletterEmail, allowSubscribe));
+
+            try
+            {
+                await js.InvokeAsync<object>("NewsLetterSurscribe.Success", new { data.Result, data.Success });
+            }
+            catch
+            {
+                await js.InvokeAsync<object>("NewsLetterSurscribe.Error", "!");
+            }
+        }
+        catch { }
+    }
+
+    protected void NewsletterSubscribeKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "enter")
+        {
+
+        }
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    if (!_customerSettings.HideNewsletterBlock)
+    {
+        <div class="newsletter">
+            <EditForm Model="@Model" name="NewsletterSubscribeForm">
+                <FluentValidationValidator />
+                <ValidationSummary />
+
+                <div class="title">
+                    <strong>@T("Newsletter.Title")</strong>
+                </div>
+                <div class="newsletter-subscribe" id="newsletter-subscribe-block">
+                    <div class="newsletter-email">
+                        <InputText type="email" @bind-Value="@Model.NewsletterEmail" id="newsletter-email" class="newsletter-subscribe-text" placeholder=@T("Newsletter.Email.Placeholder") aria-label="@T("Newsletter.Subscribe")" />
+                        <input type="button" @onclick="@NewsletterSubscribeButtonClick" value="@T(Model.AllowToUnsubscribe ? "Newsletter.Options.Send" : "Newsletter.Options.Subscribe")" id="newsletter-subscribe-button" class="button-1 newsletter-subscribe-button" />
+                        @if (Model.AllowToUnsubscribe)
+                        {
+                            <div class="options">
+                                <span class="subscribe">
+                                    <input id="newsletter_subscribe" type="radio" value="newsletter_subscribe" name="newsletter_block" checked="checked" />
+                                    <label for="newsletter_subscribe">@T("Newsletter.Options.Subscribe")</label>
+                                </span>
+                                <span class="unsubscribe">
+                                    <input id="newsletter_unsubscribe" type="radio" value="newsletter_unsubscribe" name="newsletter_block" />
+                                    <label for="newsletter_unsubscribe">@T("Newsletter.Options.Unsubscribe")</label>
+                                </span>
+                            </div>
+                        }
+                    </div>
+                    <div class="newsletter-validation">
+                        <span id="subscribe-loading-progress" style="display: none;" class="please-wait">@T("Common.Wait...")</span>
+                        <ValidationMessage For="@(()=>Model.NewsletterEmail)" />
+                        @*<span asp-validation-for="NewsletterEmail"></span>*@
+                    </div>
+                </div>
+                <div class="newsletter-result" id="newsletter-result-block"></div>
+            </EditForm>
+        </div>
+    }
+}

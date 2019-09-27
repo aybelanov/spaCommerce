@@ -1,0 +1,415 @@
+﻿@page "/productreviews/{ProductId:int}"
+@layout _ColumnsOne
+@inject IProductService productService
+@inject NavigationManager uriHelper
+@inject IProductModelFactory productModelFactory
+@inject IWorkContext workContext
+@inject CatalogSettings catalogSettings
+@inject ILocalizationService localizationService
+@inject IOrderService  orderService
+@inject CaptchaSettings captchaSettings
+@inject IStoreContext storeContext
+@inject IWorkflowMessageService workflowMessageService
+@inject Nop.Services.Logging.ICustomerActivityService customerActivityService
+@inject Nop.Core.Domain.Localization.LocalizationSettings localizationSettings
+@inject Nop.Services.Events.IEventPublisher eventPublisher
+@inject IProductModelFactory productModelFactory
+@inject IJSService jsService
+
+@code{
+
+    ProductReviewsModel Model { get; set; }
+
+    Recaptcha recaptcha;
+
+    [Parameter] public int ProductId { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        if (ProductId <= 0) return;
+
+        var product = productService.GetProductById(ProductId);
+        if (product == null || product.Deleted || !product.Published || !product.AllowCustomerReviews)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        Model = new ProductReviewsModel();
+        Model = productModelFactory.PrepareProductReviewsModel(Model, product);
+
+        //only registered users can leave reviews
+        if (workContext.CurrentCustomer.IsGuest() && !catalogSettings.AllowAnonymousUsersToReviewProduct)
+        {
+            Model.AddProductReview.SuccessfullyAdded = true;
+            Model.AddProductReview.Result = localizationService.GetResource("Reviews.OnlyRegisteredUsersCanWriteReviews");
+            return;
+        }
+
+        if (catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
+        {
+            var hasCompletedOrders = orderService.SearchOrders(customerId: workContext.CurrentCustomer.Id,
+                productId: ProductId,
+                osIds: new List<int> { (int)OrderStatus.Complete },
+                pageSize: 1).Any();
+
+            if (!hasCompletedOrders)
+            {
+                Model.AddProductReview.SuccessfullyAdded = true;
+                Model.AddProductReview.Result = localizationService.GetResource("Reviews.ProductReviewPossibleOnlyAfterPurchasing");
+            }
+        }
+
+        //default value
+        Model.AddProductReview.Rating = catalogSettings.DefaultProductRatingValue;
+
+        //default value for all additional review types
+        if (Model.ReviewTypeList.Count > 0)
+            foreach (var additionalProductReview in Model.AddAdditionalProductReviewList)
+            {
+                additionalProductReview.Rating = additionalProductReview.IsRequired ? catalogSettings.DefaultProductRatingValue : 0;
+            }
+
+        await Task.CompletedTask;
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+
+        await jsService.ShowLoadWaiting();
+
+        if (ProductId <= 0)
+        {
+            await jsService.DisplayBarNotification(new[] { "The processing product doesn't exist more." }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        @if (Model.ReviewTypeList.Count > 0)
+        {
+            foreach (var additionalReview in Model.AddAdditionalProductReviewList.OrderBy(ob => ob.DisplayOrder).ToList())
+            {
+                var curAdditionalReview = Model.AddAdditionalProductReviewList.IndexOf(additionalReview);
+                Model.AddAdditionalProductReviewList[curAdditionalReview].ReviewTypeId = additionalReview.ReviewTypeId;
+                Model.AddAdditionalProductReviewList[curAdditionalReview].Name = additionalReview.Name;
+                Model.AddAdditionalProductReviewList[curAdditionalReview].Description = additionalReview.Description;
+                Model.AddAdditionalProductReviewList[curAdditionalReview].DisplayOrder = additionalReview.DisplayOrder;
+                Model.AddAdditionalProductReviewList[curAdditionalReview].IsRequired = additionalReview.IsRequired;
+            }
+        }
+
+        var product = productService.GetProductById(ProductId);
+        if (product == null || product.Deleted || !product.Published || !product.AllowCustomerReviews)
+        {
+            await jsService.DisplayBarNotification(new[] { "The processing product doesn't exist more or has not been published or making the review is banned" }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //validate CAPTCHA
+        if (captchaSettings.Enabled && captchaSettings.ShowOnProductReviewPage && !await recaptcha.IsCaptchaValid())
+        {
+            Model.AddProductReview.SuccessfullyAdded = false;
+            Model.AddProductReview.Result = captchaSettings.GetWrongCaptchaMessage(localizationService);
+
+            await jsService.DisplayBarNotification(new[] { captchaSettings.GetWrongCaptchaMessage(localizationService) }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+
+            StateHasChanged();
+            return;
+        }
+
+        if (workContext.CurrentCustomer.IsGuest() && !catalogSettings.AllowAnonymousUsersToReviewProduct)
+        {
+            Model.AddProductReview.SuccessfullyAdded = false;
+            Model.AddProductReview.Result = localizationService.GetResource("Reviews.OnlyRegisteredUsersCanWriteReviews");
+
+            await jsService.DisplayBarNotification(new[] { Model.AddProductReview.Result }, JSMessageType.Warning);
+            await jsService.ResetLoadWaiting();
+            StateHasChanged();
+            return;
+        }
+
+        if (catalogSettings.ProductReviewPossibleOnlyAfterPurchasing)
+        {
+            var hasCompletedOrders = orderService.SearchOrders(customerId: workContext.CurrentCustomer.Id,
+                productId: ProductId,
+                osIds: new List<int> { (int)OrderStatus.Complete },
+                pageSize: 1).Any();
+
+            if (!hasCompletedOrders)
+            {
+                Model.AddProductReview.SuccessfullyAdded = false;
+                Model.AddProductReview.Result = localizationService.GetResource("Reviews.ProductReviewPossibleOnlyAfterPurchasing");
+
+                await jsService.DisplayBarNotification(new[] { Model.AddProductReview.Result }, JSMessageType.Warning);
+                await jsService.ResetLoadWaiting();
+                StateHasChanged();
+                return;
+            }
+        }
+
+        await jsService.ResetLoadWaiting();
+        needStub = true;
+        StateHasChanged();
+
+        //save review
+        var rating = Model.AddProductReview.Rating;
+        if (rating < 1 || rating > 5)
+            rating = catalogSettings.DefaultProductRatingValue;
+        var isApproved = !catalogSettings.ProductReviewsMustBeApproved;
+
+        var productReview = new ProductReview
+        {
+            ProductId = product.Id,
+            CustomerId = workContext.CurrentCustomer.Id,
+            Title = Model.AddProductReview.Title,
+            ReviewText = Model.AddProductReview.ReviewText,
+            Rating = rating,
+            HelpfulYesTotal = 0,
+            HelpfulNoTotal = 0,
+            IsApproved = isApproved,
+            CreatedOnUtc = DateTime.UtcNow,
+            StoreId = storeContext.CurrentStore.Id,
+        };
+
+        product.ProductReviews.Add(productReview);
+
+        //add product review and review type mapping
+        foreach (var additionalReview in Model.AddAdditionalProductReviewList)
+        {
+            var additionalProductReview = new ProductReviewReviewTypeMapping
+            {
+                ProductReviewId = productReview.Id,
+                ReviewTypeId = additionalReview.ReviewTypeId,
+                Rating = additionalReview.Rating
+            };
+            productReview.ProductReviewReviewTypeMappingEntries.Add(additionalProductReview);
+        }
+
+        //update product totals
+        productService.UpdateProductReviewTotals(product);
+
+        //notify store owner
+        if (catalogSettings.NotifyStoreOwnerAboutNewProductReviews)
+            workflowMessageService.SendProductReviewNotificationMessage(productReview, localizationSettings.DefaultAdminLanguageId);
+
+        //activity log
+        customerActivityService.InsertActivity("PublicStore.AddProductReview",
+            string.Format(localizationService.GetResource("ActivityLog.PublicStore.AddProductReview"), product.Name), product);
+
+        //raise event
+        if (productReview.IsApproved)
+            eventPublisher.Publish(new ProductReviewApprovedEvent(productReview));
+
+        Model = productModelFactory.PrepareProductReviewsModel(Model, product);
+        Model.AddProductReview.Title = null;
+        Model.AddProductReview.ReviewText = null;
+
+        Model.AddProductReview.SuccessfullyAdded = true;
+        if (!isApproved)
+            Model.AddProductReview.Result = localizationService.GetResource("Reviews.SeeAfterApproving");
+        else
+            Model.AddProductReview.Result = localizationService.GetResource("Reviews.SuccessfullyAdded");
+
+        await jsService.DisplayBarNotification(new[] { Model.AddProductReview.Result });
+        needStub = false;
+        StateHasChanged();
+    }
+
+}
+
+@if (needStub)
+{
+    <LoadingStub></LoadingStub>
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(Model.ProductName);
+    Html.AddTitleParts(T("PageTitle.ProductReviews").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-product-reviews-page");
+
+
+    <div class="page product-reviews-page">
+        <div class="page-title">
+            <h1>@T("Reviews.ProductReviewsFor") <a href="@Url.RouteUrl("Product", new { SeName = Model.ProductSeName })">@Model.ProductName</a></h1>
+        </div>
+        <div class="page-body">
+            <Widget AdditionalData="@Model" WidgetZone="PublicWidgetZones.ProductReviewsPageTop" />
+            @if (Model.AddProductReview.SuccessfullyAdded)
+            {
+                <div class="result">
+                    @Model.AddProductReview.Result
+                </div>
+            }
+            else
+            {
+                <div class="write-review" id="review-form">
+                    <div class="title">
+                        <strong>@T("Reviews.Write")</strong>
+                    </div>
+                    <EditForm Model="@Model.AddProductReview" OnValidSubmit="@OnValidSubmit">
+                        @{
+                            var inputDisabled = Model.AddProductReview.CanCurrentCustomerLeaveReview ? null : "disabled";
+                        }
+                        <FluentValidationValidator />
+                        <ValidationSummary />
+                        <div class="fieldset">
+                            <div class="form-fields">
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.AddProductReview.Title)" Postfix=":"></LabelText>
+                                    <InputText @bind-Value="@Model.AddProductReview.Title" class="review-title" disabled="@inputDisabled" type="text" />
+                                    <Required />
+                                    <ValidationMessage For="@(() => Model.AddProductReview.Title)" />
+                                </div>
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.AddProductReview.ReviewText)" Postfix=":"></LabelText>
+                                    <InputTextArea @bind-Value="@Model.AddProductReview.ReviewText" class="review-text" disabled="@inputDisabled"></InputTextArea>
+                                    <Required />
+                                    <ValidationMessage For="@(() => Model.AddProductReview.ReviewText)"></ValidationMessage>
+                                </div>
+                                <div class="review-rating">
+                                    <div class="name-description">
+                                        <LabelText For="@(()=>Model.AddProductReview.Rating)" Postfix=":"></LabelText>
+                                    </div>
+                                    <div class="rating-wrapper">
+                                        <div class="label first">@T("Reviews.Fields.Rating.Bad")</div>
+                                        <div class="rating-options">
+                                            <input value="1" @onchange="@(e => Model.AddProductReview.Rating = 1)" checked="@(Model.AddProductReview.Rating == 1 ? "checked" : null)" type="radio" id="addproductrating_1" />
+                                            <input value="2" @onchange="@(e => Model.AddProductReview.Rating = 2)" checked="@(Model.AddProductReview.Rating == 2 ? "checked" : null)" type="radio" id="addproductrating_2" />
+                                            <input value="3" @onchange="@(e => Model.AddProductReview.Rating = 3)" checked="@(Model.AddProductReview.Rating == 3 ? "checked" : null)" type="radio" id="addproductrating_3" />
+                                            <input value="4" @onchange="@(e => Model.AddProductReview.Rating = 4)" checked="@(Model.AddProductReview.Rating == 4 ? "checked" : null)" type="radio" id="addproductrating_4" />
+                                            <input value="5" @onchange="@(e => Model.AddProductReview.Rating = 5)" checked="@(Model.AddProductReview.Rating == 5 ? "checked" : null)" type="radio" id="addproductrating_5" />
+                                        </div>
+                                        <div class="label last">@T("Reviews.Fields.Rating.Excellent")</div>
+                                    </div>
+                                </div>
+                                @if (Model.ReviewTypeList.Count > 0)
+                                {
+                                    foreach (var additionalReview in Model.AddAdditionalProductReviewList.OrderBy(ob => ob.DisplayOrder).ToList())
+                                    {
+                                        var curAdditionalReview = Model.AddAdditionalProductReviewList.IndexOf(additionalReview);
+                                        <div class="review-rating">
+                                            <div class="name-description">
+                                                <div class="tooltip">
+                                                    <label>@((MarkupString)additionalReview.Name):</label>
+                                                    <span class="tooltiptext">@((MarkupString)additionalReview.Description)</span>
+                                                </div>
+                                            </div>
+                                            <div class="rating-wrapper">
+                                                <div class="label first">@T("Reviews.Fields.Rating.Bad")</div>
+                                                <div class="rating-options">
+                                                    <input value="0" @onchange="@(e => Model.AddAdditionalProductReviewList[curAdditionalReview].Rating = 0)" checked="@(Model.AddAdditionalProductReviewList[curAdditionalReview].Rating == 0 ? "checked" : null)" type="radio" id="addproductratingext_0_@(additionalReview.ReviewTypeId)" style="display: none;" />
+                                                    <input value="1" @onchange="@(e => Model.AddAdditionalProductReviewList[curAdditionalReview].Rating = 1)" checked="@(Model.AddAdditionalProductReviewList[curAdditionalReview].Rating == 1 ? "checked" : null)" type="radio" id="addproductratingext_1_@(additionalReview.ReviewTypeId)" />
+                                                    <input value="2" @onchange="@(e => Model.AddAdditionalProductReviewList[curAdditionalReview].Rating = 2)" checked="@(Model.AddAdditionalProductReviewList[curAdditionalReview].Rating == 2 ? "checked" : null)" type="radio" id="addproductratingext_2_@(additionalReview.ReviewTypeId)" />
+                                                    <input value="3" @onchange="@(e => Model.AddAdditionalProductReviewList[curAdditionalReview].Rating = 3)" checked="@(Model.AddAdditionalProductReviewList[curAdditionalReview].Rating == 3 ? "checked" : null)" type="radio" id="addproductratingext_3_@(additionalReview.ReviewTypeId)" />
+                                                    <input value="4" @onchange="@(e => Model.AddAdditionalProductReviewList[curAdditionalReview].Rating = 4)" checked="@(Model.AddAdditionalProductReviewList[curAdditionalReview].Rating == 4 ? "checked" : null)" type="radio" id="addproductratingext_4_@(additionalReview.ReviewTypeId)" />
+                                                    <input value="5" @onchange="@(e => Model.AddAdditionalProductReviewList[curAdditionalReview].Rating = 5)" checked="@(Model.AddAdditionalProductReviewList[curAdditionalReview].Rating == 5 ? "checked" : null)" type="radio" id="addproductratingext_5_@(additionalReview.ReviewTypeId)" />
+                                                </div>
+                                                <div class="label last">@T("Reviews.Fields.Rating.Excellent")</div>
+                                            </div>
+                                        </div>
+                                    }
+                                }
+
+                                @if (Model.AddProductReview.DisplayCaptcha)
+                                {
+                                    <div class="captcha-box">
+                                        <Recaptcha @ref="recaptcha" />
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="buttons">
+                            <input type="submit" name="add-review" class="button-1 write-product-review-button" value="@T("Reviews.SubmitButton")" />
+                        </div>
+                    </EditForm>
+                </div>
+            }
+            @if (Model.Items.Count > 0)
+            {
+                <div class="product-review-list">
+                    <div class="title">
+                        <strong>@T("Reviews.ExistingReviews")</strong>
+                    </div>
+                    @foreach (var review in Model.Items)
+                    {
+                        var ratingPercent = review.Rating * 20;
+                        <div class="product-review-item">
+                            <div class="review-item-head">
+                                <div class="review-title">
+                                    <strong>@review.Title</strong>
+                                </div>
+                                <div class="product-review-box">
+                                    <div class="rating">
+                                        <div style="width: @(ratingPercent)%">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="review-content">
+                                <div class="review-text">
+                                    @((MarkupString)Nop.Core.Html.HtmlHelper.FormatText(review.ReviewText, false, true, false, false, false, false))
+                                </div>
+                                @foreach (var reviewType in review.AdditionalProductReviewList.Where(x => x.Rating > 0 && x.VisibleToAllCustomers))
+                                {
+                                    var ratingExtPercent = reviewType.Rating * 20;
+                                    <div class="review-type-rating-ext">
+                                        <div class="review-title">
+                                            <i>@reviewType.Name</i>
+                                        </div>
+                                        <div class="product-review-box">
+                                            <div class="rating">
+                                                <div style="width: @(ratingExtPercent)%">
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <br /><br />
+                                }
+                                <div class="review-info">
+                                    <span class="user">
+                                        <label>@T("Reviews.From"):</label>
+                                        @if (review.AllowViewingProfiles)
+                                        {
+                                            <a href="@Url.RouteUrl("CustomerProfile", new { id = review.CustomerId })">@(review.CustomerName)</a>
+                                        }
+                                        else
+                                        {
+                                            @review.CustomerName
+                                        }
+                                    </span>
+                                    <span class="separator">|</span>
+                                    <span class="date">
+                                        <label>@T("Reviews.Date"):</label>
+                                        <span>@review.WrittenOnStr</span>
+                                    </span>
+                                </div>
+                                <_ProductReviewHelpfulness Model="@review.Helpfulness" />
+                                <Widget AdditionalData="@review" WidgetZone="@PublicWidgetZones.ProductReviewsPageInsideReview" />
+                                @if (!string.IsNullOrEmpty(review.ReplyText))
+                                {
+                                    <div class="reply">
+                                        <div class="reply-header">
+                                            @T("Reviews.Reply")
+                                        </div>
+                                        <div class="reply-text">
+                                            @((MarkupString)Nop.Core.Html.HtmlHelper.FormatText(review.ReplyText, false, true, false, false, false, false))
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+            <Widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ProductReviewsPageBottom" />
+        </div>
+    </div>
+}

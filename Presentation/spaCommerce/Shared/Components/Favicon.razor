@@ -1,0 +1,18 @@
+@inject ICommonModelFactory commonModelFactory
+
+@code {
+
+    FaviconModel Model { get; set; }
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult<FaviconModel>(commonModelFactory.PrepareFaviconModel());
+        await base.DataRequest();
+    }
+
+}
+
+@if (Model != null && !string.IsNullOrWhiteSpace(Model.FaviconUrl))
+{
+    <link rel="shortcut icon" href="@Model.FaviconUrl" />
+}

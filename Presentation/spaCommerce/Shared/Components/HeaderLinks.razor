@@ -1,0 +1,136 @@
+﻿@using System.Text.Encodings.Web
+@inject ICommonModelFactory _commonModelFactory
+@inject IJSRuntime jsRuntime
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+
+@code{
+
+    private HeaderLinksModel Model;
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAddedToCart += ProductAddedToCart;
+        }
+
+        return base.OnInitializedAsync();
+    }
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult<HeaderLinksModel>(_commonModelFactory.PrepareHeaderLinksModel());
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            // todo alert private message
+            //if (Model.AllowPrivateMessages && !string.IsNullOrEmpty(Model.AlertMessage))
+            //{
+            //    await jsRuntime.InvokeAsync<object>("HeaderLinksScripts", JavaScriptEncoder.Default.Encode(Model.AlertMessage));
+            //}
+
+            if (Model.ShoppingCartEnabled)
+            {
+                await jsRuntime.InvokeAsync<object>("ShoppingCartScripts");
+            }
+        }
+        catch { }
+    }
+
+
+    private void ProductAddedToCart(IComponent sender, ProductAddedToCartEventArgs args)
+    {
+        if (args.CartType == ShoppingCartType.ShoppingCart)
+        {
+            Model.ShoppingCartItems = workContext.CurrentCustomer.ShoppingCartItems
+                        .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+                        .LimitPerStore(storeContext.CurrentStore.Id)
+                        .Sum(item => item.Quantity);
+
+            StateHasChanged();
+        }
+        else if (args.CartType == ShoppingCartType.Wishlist)
+        {
+            Model.WishlistItems = workContext.CurrentCustomer.ShoppingCartItems
+                        .Where(sci => sci.ShoppingCartType == ShoppingCartType.Wishlist)
+                        .LimitPerStore(storeContext.CurrentStore.Id)
+                        .Sum(item => item.Quantity);
+
+            StateHasChanged();
+        }
+    }
+
+
+    public override void Dispose()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAddedToCart -= ProductAddedToCart;
+        }
+        base.Dispose();
+    }
+}
+
+@if (Model == null)
+{
+    <LoadingStub />
+}
+else
+{
+    <div class="header-links">
+        <ul>
+            <Widget WidgetZone="@PublicWidgetZones.HeaderLinksBefore"></Widget>
+
+            @if (Model.IsAuthenticated)
+            {
+                <li><NavLink href="@Url.RouteUrl("CustomerInfo", null)" class="ico-account">@T("Account.MyAccount")@*@Model.CustomerName*@</NavLink></li>
+                <li><NavLink href="@Url.RouteUrl("Logout", null)" class="ico-logout">@T("Account.Logout")</NavLink></li>
+            }
+            else
+            {
+                <li><NavLink href="@Url.RouteUrl("Register", null)" class="ico-register">@T("Account.Register")</NavLink></li>
+                <li><NavLink href="@Url.RouteUrl("Login", null)" class="ico-login">@T("Account.Login")</NavLink></li>
+            }
+            @if (Model.AllowPrivateMessages)
+            {
+                <li>
+                    <NavLink href="@Url.RouteUrl("PrivateMessages", new { tab = "" })" class="ico-inbox">
+                        <span class="inbox-label">@T("PrivateMessages.Inbox")</span>
+                        <span class="inbox-unread">@Model.UnreadPrivateMessages</span>
+                    </NavLink>
+                </li>
+            }
+            @if (Model.WishlistEnabled)
+            {
+                <li>
+                    <NavLink href="@Url.RouteUrl("Wishlist", null)" class="ico-wishlist">
+                        <span class="wishlist-label">@T("Wishlist")</span>
+                        <span class="wishlist-qty">@T("Wishlist.HeaderQuantity", Model.WishlistItems)</span>
+                    </NavLink>
+                </li>
+            }
+            @if (Model.ShoppingCartEnabled)
+            {
+                <li>
+                    <NavLink href="@Url.RouteUrl("CompareProducts", null)" class="ico-wishlist">
+                        <span class="wishlist-label">@T("Products.Compare.List")</span>
+                    </NavLink>
+                </li>
+                <li id="topcartlink">
+                    <NavLink href="@Url.RouteUrl("ShoppingCart", null)" class="ico-cart">
+                        <span class="cart-label">@T("ShoppingCart")</span>
+                        <span class="cart-qty">@T("ShoppingCart.HeaderQuantity", Model.ShoppingCartItems)</span>
+                    </NavLink>
+                </li>
+            }
+
+            <Widget WidgetZone="@PublicWidgetZones.HeaderLinksAfter"></Widget>
+        </ul>
+    </div>
+}

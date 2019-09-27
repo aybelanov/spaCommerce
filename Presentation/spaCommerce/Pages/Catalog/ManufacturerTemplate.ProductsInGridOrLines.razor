@@ -1,0 +1,194 @@
+﻿@page "/{manufacturer:urlservice}"
+@inherits SpaGenericPageComponent
+@using Nop.Core.Domain.Seo
+@using Nop.Core;
+@using Nop.Core.Domain.Catalog;
+@using Nop.Core.Domain.Customers;
+@using Nop.Core.Domain.Media;
+@using Nop.Core.Domain.Vendors;
+@using Nop.Services.Catalog;
+@using Nop.Services.Common;
+@using Nop.Services.Localization;
+@using Nop.Services.Logging;
+@using Nop.Services.Security;
+@using Nop.Services.Stores;
+@using Nop.Services.Vendors;
+@using spaCommerce.Factories;
+@using Nop.Web.Framework;
+@using Nop.Web.Framework.Mvc.Filters;
+@using Nop.Web.Framework.Security;
+@using spaCommerce.Models.Catalog;
+@inject NavigationManager uriHelper
+@inject Nop.Core.IWebHelper webHelper
+@inject SeoSettings seoSettings
+@inject CatalogSettings catalogSettings
+@inject IAclService aclService
+@inject ICatalogModelFactory catalogModelFactory
+@inject ICategoryService categoryService
+@inject ICustomerActivityService customerActivityService
+@inject IGenericAttributeService genericAttributeService
+@inject ILocalizationService localizationService
+@inject IManufacturerService manufacturerService
+@inject IPermissionService permissionService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IProductTagService productTagService
+@inject IStoreContext storeContext
+@inject IStoreMappingService storeMappingService
+@inject IVendorService vendorService
+@inject IWebHelper webHelper
+@inject IWorkContext workContext
+@inject MediaSettings mediaSettings
+@inject VendorSettings vendorSettings
+@inject IPageHeadBuilder pageHeadBuilder
+
+@code{
+
+        ManufacturerModel Model { get; set; }
+        CatalogPagingFilteringModel Command { get; set; }
+
+    protected override Task DataRequest()
+    {
+        var manufacturerId = this.GetEntityId("manufacturer");
+        var manufacturer = manufacturerService.GetManufacturerById(manufacturerId);
+        if (manufacturer == null || manufacturer.Deleted)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+            return Task.CompletedTask;
+        }
+
+        var notAvailable =
+            //published?
+            !manufacturer.Published ||
+            //ACL (access control list)
+            !aclService.Authorize(manufacturer) ||
+            //Store mapping
+            !storeMappingService.Authorize(manufacturer);
+        //Check whether the current user has a "Manage categories" permission (usually a store owner)
+        //We should allows him (her) to use "Preview" functionality
+        if (notAvailable && !permissionService.Authorize(StandardPermissionProvider.ManageManufacturers))
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+            return Task.CompletedTask;
+        }
+
+        //'Continue shopping' URL
+        genericAttributeService.SaveAttribute(workContext.CurrentCustomer,
+            NopCustomerDefaults.LastContinueShoppingPageAttribute,
+            webHelper.GetThisPageUrl(false),
+            storeContext.CurrentStore.Id);
+
+        //display "edit" (manage) link
+        if (permissionService.Authorize(StandardPermissionProvider.AccessAdminPanel) && permissionService.Authorize(StandardPermissionProvider.ManageManufacturers))
+        {
+            var uri = new Uri(uriHelper.Uri);
+            pageHeadBuilder.AddEditPageUrl(Url.GetUriByAction("Edit", "Product", new { id = manufacturer.Id, area = AreaNames.Admin }, uri.Scheme, new HostString(uri.Host)));
+        }
+
+        //activity log
+        customerActivityService.InsertActivity("PublicStore.ViewManufacturer",
+            string.Format(localizationService.GetResource("ActivityLog.PublicStore.ViewManufacturer"), manufacturer.Name), manufacturer);
+
+        //model
+        Command = uriHelper.SetModelFromQuery<CatalogPagingFilteringModel>();
+        Model = catalogModelFactory.PrepareManufacturerModel(manufacturer, Command);
+
+        //template
+        var templateViewPath = catalogModelFactory.PrepareManufacturerTemplateViewPath(manufacturer.ManufacturerTemplateId);
+        return base.DataRequest();
+    }
+}
+
+@if (needStub && CommonParams.Router.IsAbsolutePathChanged())
+{
+    <div class="page manufacturer-page">
+        <div class="page-body">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(!string.IsNullOrEmpty(Model.MetaTitle) ? Model.MetaTitle : Model.Name);
+    //meta
+    Html.AddMetaDescriptionParts(Model.MetaDescription);
+    Html.AddMetaKeywordParts(Model.MetaKeywords);
+    //page class
+    Html.AppendPageCssClassParts("html-manufacturer-page");
+
+    if (seoSettings.CanonicalUrlsEnabled)
+    {
+        var manufacturerUrl = Url.RouteUrl("Manufacturer", new { SeName = Model.SeName }, webHelper.CurrentRequestProtocol).ToLowerInvariant();
+        Html.AddCanonicalUrlParts(manufacturerUrl, seoSettings.QueryStringInCanonicalUrlsEnabled);
+    }
+
+    <div class="page manufacturer-page">
+        <div class="page-title">
+            <h1>@Model.Name</h1>
+        </div>
+        <div class="page-body">
+            <widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ManufacturerDetailsTop" />
+            @*description*@
+            @if (!string.IsNullOrWhiteSpace(Model.Description))
+            {
+                <div class="manufacturer-description">
+                    @((MarkupString)Model.Description)
+                </div>
+            }
+            <Widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ManufacturerDetailsBeforeFeaturedProducts" />
+            @*featured products*@
+            @if (Model.FeaturedProducts.Count > 0)
+            {
+                <div class="product-grid featured-product-grid">
+                    <div class="title">
+                        <strong>@T("Products.FeaturedProducts")</strong>
+                    </div>
+                    <div class="item-grid">
+                        @foreach (var product in Model.FeaturedProducts)
+                        {
+                            <div class="item-box">
+                                <_ProductBox Model="@product" />
+                            </div>
+                        }
+                    </div>
+                </div>
+            }
+            <Widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ManufacturerDetailsAfterFeaturedProducts" />
+            @if (Model.Products.Count > 0)
+            {
+                <_CatalogSelectors Model="@Model.PagingFilteringContext" />
+            }
+            <Widget widgetZone="@PublicWidgetZones.ManufacturerDetailsBeforeFilters" additionalData="@Model" />
+            @*filtering*@
+            @if (Model.PagingFilteringContext.PriceRangeFilter.Enabled)
+            {
+                <_FilterPriceBox Model="@Model.PagingFilteringContext.PriceRangeFilter" />
+            }
+            <Widget widgetZone="@PublicWidgetZones.ManufacturerDetailsBeforeProductList" additionalData="@Model" />
+            <Pager Model="@Model.PagingFilteringContext" />
+            @if (needStub)
+            {
+                <LoadingStub />
+            }
+            else
+            {
+                @if (Model.Products.Count > 0)
+                {
+                    <div class="@(Model.PagingFilteringContext.ViewMode == "list" ? "product-list" : "product-grid")">
+                        <div class="item-grid">
+                            @foreach (var product in Model.Products)
+                            {
+                                <div class="item-box">
+                                    <_ProductBox Model="@product" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+            <Pager Model="@Model.PagingFilteringContext" />
+            <Widget widgetZone="@PublicWidgetZones.ManufacturerDetailsBottom" additionalData="@Model" />
+        </div>
+    </div>
+}

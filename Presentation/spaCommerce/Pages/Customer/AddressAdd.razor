@@ -1,0 +1,105 @@
+﻿@page "/customer/addressadd"
+@layout _ColumnsTwo
+@using Nop.Services.Directory
+@using Nop.Core.Domain.Common
+@inject IWorkContext workContext
+@inject NavigationManager uriHelper
+@inject ICustomerService customerService
+@inject IAddressAttributeParser addressAttributeParser
+@inject IAddressModelFactory addressModelFactory
+@inject IJSService jsService
+@inject ICountryService countryService
+@inject AddressSettings addressSettings
+
+@code{
+
+    private CustomerAddressEditModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        Model = new CustomerAddressEditModel();
+        addressModelFactory.PrepareAddressModel(Model.Address,
+            address: null,
+            excludeProperties: false,
+            addressSettings: addressSettings,
+            loadCountries: () => countryService.GetAllCountries(workContext.WorkingLanguage.Id));
+    }
+
+
+    protected async Task OnValidSubmit(EditContext editContext)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var customer = workContext.CurrentCustomer;
+
+        //custom address attributes
+        var customAttributes = addressAttributeParser.ParseCustomAddressAttributes(Model.Form ?? new FormCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues>()));
+        var customAttributeWarnings = addressAttributeParser.GetAttributeWarnings(customAttributes);
+        if (customAttributeWarnings.Any())
+        {
+            await jsService.DisplayBarNotification(customAttributeWarnings.ToArray(), JSMessageType.Error);
+            StateHasChanged();
+            return;
+        }
+
+        var address = Model.Address.ToEntity();
+        address.CustomAttributes = customAttributes;
+        address.CreatedOnUtc = DateTime.UtcNow;
+        //some validation
+        if (address.CountryId == 0)
+            address.CountryId = null;
+        if (address.StateProvinceId == 0)
+            address.StateProvinceId = null;
+        //customer.Addresses.Add(address);
+        customer.CustomerAddressMappings.Add(new CustomerAddressMapping { Address = address });
+        customerService.UpdateCustomer(customer);
+
+        uriHelper.NavigateTo(Url.RouteUrl("CustomerAddresses"));
+    }
+
+    public RenderFragment LeftSection { get; set; } =@<CustomerNavigation SelectedTabId="(int)CustomerNavigationEnum.Addresses" />;
+}
+
+<div class="page account-page address-edit-page">
+    <div class="page-title">
+        <h1>@T("Account.MyAccount") - @T("Account.CustomerAddresses.AddNew")</h1>
+    </div>
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Account").Text);
+        Html.AppendPageCssClassParts("html-account-page");
+        //page class
+        Html.AppendPageCssClassParts("html-address-edit-page");
+
+        <EditForm Model="Model.Address" OnValidSubmit="OnValidSubmit" method="post">
+
+            <div class="page-body">
+                <FluentValidationValidator />
+                <ValidationSummary />
+                <_CreateOrUpdateAddress Model="Model.Address" />
+                <div class="buttons">
+                    <input type="submit" class="button-1 save-address-button" value="@T("Common.Save")" />
+                </div>
+            </div>
+            
+        </EditForm>
+    }
+</div>

@@ -1,0 +1,45 @@
+﻿@using Nop.Core
+@using Nop.Core.Domain.Tax
+@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Mvc.Rendering
+@using System.Net
+@inject IWebHelper webHelper
+@inject IHttpContextAccessor httpContextAccessor
+@inject ICommonModelFactory _factory
+@inject TaxSettings taxSettings
+
+@functions{
+
+    private TaxTypeSelectorModel Model;
+
+    protected override async Task DataRequest()
+    {
+        if (taxSettings.AllowCustomersToSelectTaxDisplayType)
+        {
+            Model = await Task.FromResult<TaxTypeSelectorModel>(_factory.PrepareTaxTypeSelectorModel());
+        }
+    }
+}
+
+@if (Model != null)
+{
+    var rawUrl = webHelper.GetRawUrl(httpContextAccessor.HttpContext.Request);
+
+    var taxTypes = new List<SelectListItem>();
+    taxTypes.Add(new SelectListItem
+    {
+        Text = T("Tax.Inclusive").Text,
+        Value = webHelper.ModifyQueryString(Url.GetUriByRouteValues(httpContextAccessor.HttpContext.Request.HttpContext, "ChangeTaxType", new { customertaxtype = ((int)TaxDisplayType.IncludingTax) }), "returnurl", rawUrl),
+        Selected = Model.CurrentTaxType == TaxDisplayType.IncludingTax
+    });
+    taxTypes.Add(new SelectListItem
+    {
+        Text = T("Tax.Exclusive").Text,
+        Value = webHelper.ModifyQueryString(Url.GetUriByRouteValues(httpContextAccessor.HttpContext.Request.HttpContext, "ChangeTaxType", new { customertaxtype = ((int)TaxDisplayType.ExcludingTax) }), "returnurl", rawUrl),
+        Selected = Model.CurrentTaxType == TaxDisplayType.ExcludingTax
+    });
+
+    <div class="tax-display-type-selector">
+        <select id="customerTaxType" name="customerTaxType" asp-items="@taxTypes" onchange="setLocation(this.value);"></select>
+    </div>
+}

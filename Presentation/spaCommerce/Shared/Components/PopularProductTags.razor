@@ -1,0 +1,59 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject ICatalogModelFactory _factory
+@inject IJSRuntime jsRuntime
+
+@code{
+
+    private PopularProductTagsModel Model;
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult<PopularProductTagsModel>(_factory.PreparePopularProductTagsModel());
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("AdditionNavigation.SetBehavior", ".block.block-popular-tags");
+        }
+        catch { }
+    }
+}
+
+@if (needStub)
+{
+    <div class="block block-popular-tags">
+        <div class="title">
+            <strong>@T("Products.Tags.Popular")</strong>
+        </div>
+        <div class="listbox">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model != null && Model.Tags.Count > 0)
+{
+    <div class="block block-popular-tags">
+        <div class="title">
+            <strong>@T("Products.Tags.Popular")</strong>
+        </div>
+        <div class="listbox">
+            <div class="tags">
+                <ul>
+                    @foreach (var item in Model.Tags)
+                    {
+                        <li><a href="@(string.IsNullOrWhiteSpace(item.SeName) ? $"/producttag/{item.Id}/{item.Name}" : $"/{item.SeName}")" style="font-size:@(Model.GetFontSize(item))%;">@item.Name</a></li>
+                    }
+                </ul>
+            </div>
+            @if (Model.TotalTags > Model.Tags.Count)
+            {
+                <div class="view-all">
+                    <a href="@Url.RouteUrl("ProductTagsAll", null)">@T("Products.Tags.Popular.ViewAll")</a>
+                </div>
+            }
+        </div>
+    </div>
+}

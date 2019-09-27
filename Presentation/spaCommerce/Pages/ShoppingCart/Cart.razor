@@ -1,0 +1,110 @@
+﻿@page "/cart"
+@layout _ColumnsOne
+@using Nop.Core
+@using Nop.Core.Domain.Orders
+@using Nop.Core.Domain.Tax
+@using Nop.Services.Common
+@inject IWorkContext workContext
+@inject IPermissionService permissionService
+@inject ICustomerService customerService
+@inject IStoreContext storeContext
+@inject IShoppingCartModelFactory shoppingCartModelFactory
+@inject IJSService jsService
+@inject NavigationManager uriHelper
+@inject IShoppingCartService shoppingCartService
+@inject ShoppingCartSettings shoppingCartSettings
+@inject ILocalizationService localizationService
+@inject IProductService productService
+@inject OrderSettings orderSettings
+@inject IShoppingCartComponentService shoppingCartComponentService
+@inject IGenericAttributeService genericAttributeService
+
+
+@code{
+
+    private ShoppingCartModel Model { get; set; }
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAddedToCart += OnProductAddedToCart;
+        }
+
+        return base.OnInitializedAsync();
+    }
+
+
+    private async void OnProductAddedToCart(IComponent sender, ProductAddedToCartEventArgs args)
+    {
+        await jsService.ShowLoadWaiting();
+        await DataRequest();
+        StateHasChanged();
+        await jsService.ResetLoadWaiting();
+    }
+
+
+    protected override async Task DataRequest()
+    {
+        await EnsureAccess();
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+           .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+           .LimitPerStore(storeContext.CurrentStore.Id)
+           .ToList();
+
+        Model = shoppingCartModelFactory.PrepareShoppingCartModel(new ShoppingCartModel(), cart);
+        // initially processing of the attributes
+        shoppingCartComponentService.CheckoutAttributeChange(Model.CheckoutAttributes, Model.IsEditable);
+    }
+
+
+    private async Task EnsureAccess()
+    {
+        if (!permissionService.Authorize(StandardPermissionProvider.EnableWishlist) || workContext.CurrentCustomer == null)
+        {
+            await jsService.ResetLoadWaiting();
+            await jsService.DisplayBarNotification(new[] { "Access to the wishlist is denied or this customer is unknown." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+    }
+
+
+    public override void Dispose()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAddedToCart += OnProductAddedToCart;
+        }
+
+        base.Dispose();
+    }
+}
+
+@{
+    //title
+    Html.AddTitleParts(T("PageTitle.ShoppingCart").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-shopping-cart-page");
+}
+@if (Model != null && !Model.OnePageCheckoutEnabled)
+{
+    <CheckoutProgress Step="@CheckoutProgressStep.Cart" />
+}
+<div class="page shopping-cart-page">
+    <div class="page-title">
+        <h1>@T("ShoppingCart")</h1>
+    </div>
+    <div class="page-body">
+        @if (needStub)
+        {
+            <LoadingStub />
+        }
+        else if (Model != null)
+        {
+            <OrderSummary Model="Model" />
+        }
+    </div>
+</div>

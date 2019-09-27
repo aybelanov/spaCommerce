@@ -1,0 +1,38 @@
+﻿@inject ICheckoutModelFactory checkoutModelFactory
+@code {
+
+    [Parameter] public CheckoutProgressStep Step { get; set; }
+    private CheckoutProgressModel Model { get; set; }
+
+    protected override Task DataRequest()
+    {
+        Model = checkoutModelFactory.PrepareCheckoutProgressModel(Step);
+        return base.DataRequest();
+    }
+
+}
+
+    <div class="order-progress">
+        <ul>
+            <Widget WidgetZone="@PublicWidgetZones.CheckoutProgressBefore" />
+            <li class="active-step">
+                <a href="@(Model.CheckoutProgressStep !=CheckoutProgressStep.Complete ? Url.RouteUrl("ShoppingCart") : null)">@T("Checkout.Progress.Cart")</a>
+            </li>
+            <li class ="@((Model.CheckoutProgressStep == CheckoutProgressStep.Address || Model.CheckoutProgressStep == CheckoutProgressStep.Shipping || Model.CheckoutProgressStep == CheckoutProgressStep.Payment || Model.CheckoutProgressStep == CheckoutProgressStep.Confirm || Model.CheckoutProgressStep == CheckoutProgressStep.Complete) ? "active-step" : "inactive-step")">
+                <a href="@(Model.CheckoutProgressStep != CheckoutProgressStep.Cart && Model.CheckoutProgressStep != CheckoutProgressStep.Complete ? Url.RouteUrl("CheckoutBillingAddress") : null)">@T("Checkout.Progress.Address")</a>
+            </li>
+            <li class="@(Model.CheckoutProgressStep == CheckoutProgressStep.Shipping || Model.CheckoutProgressStep == CheckoutProgressStep.Payment || Model.CheckoutProgressStep == CheckoutProgressStep.Confirm || Model.CheckoutProgressStep == CheckoutProgressStep.Complete ? "active-step" : "inactive-step")">
+                <a href="@(Model.CheckoutProgressStep != CheckoutProgressStep.Cart && Model.CheckoutProgressStep != CheckoutProgressStep.Address && Model.CheckoutProgressStep != CheckoutProgressStep.Complete ? Url.RouteUrl("CheckoutShippingMethod") : null)">@T("Checkout.Progress.Shipping")</a>
+            </li>
+            <li class="@(Model.CheckoutProgressStep == CheckoutProgressStep.Payment || Model.CheckoutProgressStep == CheckoutProgressStep.Confirm || Model.CheckoutProgressStep == CheckoutProgressStep.Complete ? "active-step" : "inactive-step")">
+                <a href="@(Model.CheckoutProgressStep != CheckoutProgressStep.Cart && Model.CheckoutProgressStep != CheckoutProgressStep.Address && Model.CheckoutProgressStep != CheckoutProgressStep.Shipping && Model.CheckoutProgressStep != CheckoutProgressStep.Complete ? Url.RouteUrl("CheckoutPaymentMethod") : null)">@T("Checkout.Progress.Payment")</a>
+            </li>
+            <li class="@(Model.CheckoutProgressStep == CheckoutProgressStep.Confirm || Model.CheckoutProgressStep == CheckoutProgressStep.Complete ? "active-step" : "inactive-step")">
+                <a href="@(Model.CheckoutProgressStep != CheckoutProgressStep.Cart && Model.CheckoutProgressStep != CheckoutProgressStep.Address && Model.CheckoutProgressStep != CheckoutProgressStep.Shipping && Model.CheckoutProgressStep != CheckoutProgressStep.Payment && Model.CheckoutProgressStep != CheckoutProgressStep.Complete ? Url.RouteUrl("CheckoutConfirm") : null)">@T("Checkout.Progress.Confirm")</a>
+            </li>
+            <li class="@(Model.CheckoutProgressStep == CheckoutProgressStep.Complete ? "active-step" : "inactive-step")">
+                <a>@T("Checkout.Progress.Complete")</a>
+            </li>
+            <Widget WidgetZone ="@PublicWidgetZones.CheckoutProgressAfter" />
+        </ul>
+    </div>

@@ -1,0 +1,89 @@
+﻿@page "/{producttag:urlservice}"
+@page "/producttag/{id:int}/{slug}"
+@inherits SpaGenericPageComponent
+@using Nop.Core.Domain.Seo
+@using Nop.Services.Catalog
+@inject Nop.Core.IWebHelper webHelper
+@inject NavigationManager uriHelper
+@inject SeoSettings seoSettings
+@inject IProductTagService productTagService
+@inject ICatalogModelFactory catalogModelFactory
+
+@code{
+    [Parameter] public int Id { get; set; }
+    [Parameter] public string Slug { get; set; }
+
+    private ProductsByTagModel Model { get; set; }
+    private CatalogPagingFilteringModel Command { get; set; }
+
+    protected override Task DataRequest()
+    {
+        var productTag = productTagService.GetProductTagById(Id);
+        if (productTag == null)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+            return Task.CompletedTask;
+        }
+
+        Command = uriHelper.SetModelFromQuery<CatalogPagingFilteringModel>();
+        Model = catalogModelFactory.PrepareProductsByTagModel(productTag, Command);
+        return Task.CompletedTask;
+    }
+
+}
+
+@if (needStub && CommonParams.Router.IsAbsolutePathChanged())
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(string.Format(T("PageTitle.ProductsByTag").Text, Model.TagName));
+    //page class
+    Html.AppendPageCssClassParts("html-product-tag-page");
+
+    //canonical URL
+    if (seoSettings.CanonicalUrlsEnabled)
+    {
+        var productsByTagUrl = Url.RouteUrl("ProductsByTag", new { SeName = Model.TagSeName }, webHelper.CurrentRequestProtocol).ToLowerInvariant();
+        Html.AddCanonicalUrlParts(productsByTagUrl, seoSettings.QueryStringInCanonicalUrlsEnabled);
+    }
+
+    <div class="page product-tag-page">
+        <div class="page-title">
+            <h1>@string.Format(T("Products.Tags.ProductsTaggedWith").Text, Model.TagName)</h1>
+        </div>
+        <div class="page-body">
+            <Widget WidgetZone="@PublicWidgetZones.ProductsByTagTop" AdditionalData="@Model" />
+            @if (Model.Products.Count > 0)
+            {
+                <_CatalogSelectors Model="@Model.PagingFilteringContext" />
+            }
+            <Widget WidgetZone="@PublicWidgetZones.ProductsByTagBeforeProductList" AdditionalData="@Model" />
+            <Pager Model="@Model.PagingFilteringContext"></Pager>
+            @if (needStub)
+            {
+                <LoadingStub />
+            }
+            else
+            {
+                @if (Model.Products.Count > 0)
+                {
+                    <div class="@(Model.PagingFilteringContext.ViewMode == "list" ? "product-list" : "product-grid")">
+                        <div class="item-grid">
+                            @foreach (var product in Model.Products)
+                            {
+                                <div class="item-box">
+                                    <_ProductBox Model="@product" />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                }
+            }
+            <Pager Model="@Model.PagingFilteringContext"></Pager>
+            <Widget WidgetZone="@PublicWidgetZones.ProductsByTagBottom" AdditionalData="@Model" />
+        </div>
+    </div>
+}

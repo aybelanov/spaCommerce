@@ -1,0 +1,214 @@
+@page "/{product:urlservice}"
+@inherits SpaGenericPageComponent
+@using Microsoft.AspNetCore.Http.Extensions
+@using Nop.Core.Domain.Seo
+@using Nop.Core
+@using Nop.Core.Domain.Catalog
+@using Nop.Core.Domain.Customers
+@using Nop.Core.Domain.Localization
+@using Nop.Core.Domain.Orders
+@using Nop.Core.Domain.Security
+@using Nop.Services.Catalog
+@using Nop.Services.Events
+@using Nop.Services.Localization
+@using Nop.Services.Logging
+@using Nop.Services.Messages
+@using Nop.Services.Orders
+@using Nop.Services.Security
+@using Nop.Services.Seo
+@using Nop.Services.Stores
+@inject NavigationManager uriHelper
+@inject IJSRuntime jsRuntime
+@inject IProductService productService
+@inject SeoSettings seoSettings
+@inject IHttpContextAccessor contextAcccessor
+@inject CatalogSettings catalogSettings
+@inject IAclService aclService
+@inject IStoreMappingService storeMappingService
+@inject IPermissionService permissionService
+@inject IUrlRecordService urlRecordService
+@inject ShoppingCartSettings shoppingCartSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IRecentlyViewedProductsComponentService recentlyViewedProductsServiceJS
+@inject ICustomerActivityService customerActivityService
+@inject ILocalizationService localizationService
+@inject IProductModelFactory productModelFactory
+@inject IPageHeadBuilder pageHeadBuilder
+
+@code{
+
+    private int updatecartitemid;
+
+    ProductDetailsModel Model { get; set; }
+
+    string productTemplateViewPath;
+
+
+    protected override Task OnInitializedAsync()
+    {
+        updatecartitemid = uriHelper.GetQueryParameterValues<int>("updatecartitemid")?.FirstOrDefault() ?? default;
+        return base.OnInitializedAsync();
+    }
+
+
+    protected override async Task DataRequest()
+    {
+        var product = productService.GetProductById(CurrentUrlRecord.EntityId);
+        if (product == null || product.Deleted)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+            return;
+        }
+
+        var notAvailable =
+            //published?
+            (!product.Published && !catalogSettings.AllowViewUnpublishedProductPage) ||
+            //ACL (access control list)
+            !aclService.Authorize(product) ||
+            //Store mapping
+            !storeMappingService.Authorize(product) ||
+            //availability dates
+            !productService.ProductIsAvailable(product);
+        //Check whether the current user has a "Manage products" permission (usually a store owner)
+        //We should allows him (her) to use "Preview" functionality
+        if (notAvailable && !permissionService.Authorize(StandardPermissionProvider.ManageProducts))
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("PageNotFound"));
+            return;
+        }
+
+        //visible individually?
+        if (!product.VisibleIndividually)
+        {
+            //is this one an associated products?
+            var parentGroupedProduct = productService.GetProductById(product.ParentGroupedProductId);
+            if (parentGroupedProduct == null)
+            {
+                uriHelper.NavigateTo("HomePage");
+                return;
+            }
+
+            uriHelper.NavigateTo(Url.RouteUrl("Product", new { SeName = urlRecordService.GetSeName(parentGroupedProduct) }));
+            return;
+        }
+
+        //update existing shopping cart or wishlist  item?
+        ShoppingCartItem updatecartitem = null;
+        if (shoppingCartSettings.AllowCartItemEditing && updatecartitemid > 0)
+        {
+            var cart = workContext.CurrentCustomer.ShoppingCartItems
+                .LimitPerStore(storeContext.CurrentStore.Id)
+                .ToList();
+            updatecartitem = cart.FirstOrDefault(x => x.Id == updatecartitemid);
+            //not found?
+            if (updatecartitem == null)
+            {
+                uriHelper.NavigateTo(Url.RouteUrl("Product", new { SeName = urlRecordService.GetSeName(product) }));
+                return;
+            }
+            //is it this product?
+            if (product.Id != updatecartitem.ProductId)
+            {
+                uriHelper.NavigateTo(Url.RouteUrl("Product", new { SeName = urlRecordService.GetSeName(product) }));
+                return;
+            }
+        }
+
+        try
+        {
+            //save as recently viewed
+            await recentlyViewedProductsServiceJS.AddProductToRecentlyViewedList(CurrentUrlRecord.EntityId);
+        }
+        catch { }
+
+        //display "edit" (manage) link
+        if (permissionService.Authorize(StandardPermissionProvider.AccessAdminPanel) &&
+            permissionService.Authorize(StandardPermissionProvider.ManageProducts))
+        {
+            //a vendor should have access only to his products
+            if (workContext.CurrentVendor == null || workContext.CurrentVendor.Id == product.VendorId)
+            {
+                var uri = new Uri(uriHelper.Uri);
+                pageHeadBuilder.AddEditPageUrl(Url.GetUriByAction("Edit", "Product", new { id = product.Id, area = AreaNames.Admin }, uri.Scheme, new HostString(uri.Host)));
+            }
+        }
+
+        //activity log
+        customerActivityService.InsertActivity("PublicStore.ViewProduct",
+            string.Format(localizationService.GetResource("ActivityLog.PublicStore.ViewProduct"), product.Name), product);
+
+        //model
+        Model = productModelFactory.PrepareProductDetailsModel(product, updatecartitem, false);
+        //template
+        productTemplateViewPath = productModelFactory.PrepareProductTemplateViewPath(product);
+    }
+
+
+    public RenderFragment BreadCrumbSection =>@<_ProductBreadcrumb />;
+}
+
+@if (needStub)
+{
+    <LoadingStub></LoadingStub>
+}
+else if (Model != null)
+{
+    // TODO page head
+    //title
+    Html.AddTitleParts(!string.IsNullOrEmpty(Model.MetaTitle) ? Model.MetaTitle : Model.Name);
+    //meta
+    Html.AddMetaDescriptionParts(Model.MetaDescription);
+    Html.AddMetaKeywordParts(Model.MetaKeywords);
+    //page class
+    Html.AppendPageCssClassParts("html-product-details-page");
+
+    //canonical URL
+    if (seoSettings.CanonicalUrlsEnabled)
+    {
+        var productUrl = Url.RouteUrl("Product", new { SeName = Model.SeName });
+        Html.AddCanonicalUrlParts(productUrl, seoSettings.QueryStringInCanonicalUrlsEnabled);
+    }
+
+    //open graph META tags
+    if (seoSettings.OpenGraphMetaTags)
+    {
+        <!-- Open Graph Metadata -->
+        Html.AddHeadCustomParts("<meta property=\"og:type\" content=\"product\" />");
+        Html.AddHeadCustomParts("<meta property=\"og:title\" content=\"" + Html.Encode(Model.Name) + "\" />");
+        //Html.AddHeadCustomParts("<meta property=\"og:description\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.MetaDescription)) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"og:description\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.ShortDescription)) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"og:image\" content=\"" + Model.DefaultPictureModel.ImageUrl + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"og:url\" content=\"" + uriHelper.Uri + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"og:site_name\" content=\"" + Html.Encode(Model.CurrentStoreName) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"product:brand\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.ProductSpecifications.FirstOrDefault(x => x.SpecificationAttributeName == "Απύνδ" || x.SpecificationAttributeName == "Brand")?.ValueRaw ?? "unknown")) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"product:availability\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags("in stock")) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"product:condition\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags("new")) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"product:price:amount\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.ProductPrice.PriceValue.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture))) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"product:price:currency\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.ProductPrice.CurrencyCode)) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"product:retailer_item_id\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(string.IsNullOrWhiteSpace(Model.Sku) ? Model.Id.ToString() : Model.Sku)) + "\" />");
+        <!-- End Open Graph Metadata -->
+    }
+
+    //Twitter META tags
+    if (seoSettings.TwitterMetaTags)
+    {
+        <!-- Twitter Meta Tags -->
+        Html.AddHeadCustomParts("<meta property=\"twitter:card\" content=\"summary\" />");
+        Html.AddHeadCustomParts("<meta property=\"twitter:site\" content=\"" + Html.Encode(Model.CurrentStoreName) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"twitter:title\" content=\"" + Html.Encode(Model.Name) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"twitter:description\" content=\"" + Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.MetaDescription)) + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"twitter:image\" content=\"" + Model.DefaultPictureModel.ImageUrl + "\" />");
+        Html.AddHeadCustomParts("<meta property=\"twitter:url\" content=\"" + uriHelper.Uri + "\" />");
+        <!-- End Twitter Meta Tags -->
+    }
+
+    if (productTemplateViewPath == "ProductTemplate.Grouped")
+    {
+        <ProductTemplate_Grouped Model="@Model" />
+    }
+    else if (productTemplateViewPath == "ProductTemplate.Simple")
+    {
+        <ProductTemplate_Simple Model="@Model" />
+    }
+}

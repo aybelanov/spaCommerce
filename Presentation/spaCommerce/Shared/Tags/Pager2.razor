@@ -1,0 +1,99 @@
+﻿@inject ILocalizationService localizationService
+
+@code {
+
+    [Parameter] public PagerModel Model { get; set; }
+
+    [Parameter] public int PageNumber { get; set; }
+
+}
+
+@if (Model.TotalRecords > 0)
+{
+    <ul>
+        @if (Model.ShowTotalSummary && (Model.TotalPages > 0))
+        {
+            <li class="total-summary">@((MarkupString)(string.Format(Model.CurrentPageText, Model.PageIndex + 1, Model.TotalPages, Model.TotalRecords)))</li>
+        }
+        @if (Model.ShowPagerItems && (Model.TotalPages > 1))
+        {
+            if (Model.ShowFirst)
+            {
+                //first page
+                if ((Model.PageIndex >= 3) && (Model.TotalPages > Model.IndividualPagesDisplayedCount))
+                {
+                    Model.RouteValues.pageNumber = 1;
+                    <li class="first-page">
+                        <a href="@Url.GetPathByRouteValues(Model.RouteActionName, Model.RouteValues)" title="@localizationService.GetResource("Pager.FirstPageTitle")">
+                            @Model.FirstButtonText
+                        </a>
+                    </li>
+                }
+            }
+            if (Model.ShowPrevious)
+            {
+                //previous page
+                if (Model.PageIndex > 0)
+                {
+                    Model.RouteValues.pageNumber = (Model.PageIndex);
+                    <li class="previous-page">
+                        <a href="@Url.GetPathByRouteValues(Model.RouteActionName, Model.RouteValues)" title="@localizationService.GetResource("Pager.PreviousPageTitle")">
+                            @Model.PreviousButtonText
+                        </a>
+                    </li>
+                }
+            }
+            if (Model.ShowIndividualPages)
+            {
+                //individual pages
+                var firstIndividualPageIndex = Model.GetFirstIndividualPageIndex();
+                var lastIndividualPageIndex = Model.GetLastIndividualPageIndex();
+                for (var i = firstIndividualPageIndex; i <= lastIndividualPageIndex; i++)
+                {
+                    if (Model.PageIndex == i)
+                    {
+                        <li class="current-page"><span>@(i + 1)</span></li>
+                    }
+
+                    else
+                    {
+                        Model.RouteValues.pageNumber = (i + 1);
+                        <li class="individual-page">
+                            <a href="@Url.GetPathByRouteValues(Model.RouteActionName, Model.RouteValues)" title="@string.Format(localizationService.GetResource("Pager.PageLinkTitle"), (i + 1))">
+                                @((i + 1).ToString())
+                            </a>
+                        </li>
+                    }
+                }
+            }
+
+            if (Model.ShowNext)
+            {
+                //next page
+                if ((Model.PageIndex + 1) < Model.TotalPages)
+                {
+                    Model.RouteValues.pageNumber = (Model.PageIndex + 2);
+                    <li class="next-page">
+                        <a href="@Url.GetPathByRouteValues(Model.RouteActionName, Model.RouteValues)" title="@localizationService.GetResource("Pager.NextPageTitle")">
+                            @Model.NextButtonText
+                        </a>
+                    </li>
+                }
+            }
+
+            if (Model.ShowLast)
+            {
+                //last page
+                if (((Model.PageIndex + 3) < Model.TotalPages) && (Model.TotalPages > Model.IndividualPagesDisplayedCount))
+                {
+                    Model.RouteValues.pageNumber = Model.TotalPages;
+                    <li class="last-page">
+                        <a href="@Url.GetPathByRouteValues(Model.RouteActionName, Model.RouteValues)" title="@localizationService.GetResource("Pager.LastPageTitle")">
+                            @Model.LastButtonText
+                        </a>
+                    </li>
+                }
+            }
+         }
+    </ul>
+}

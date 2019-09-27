@@ -1,0 +1,46 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>8.0</LangVersion>
+    <Copyright>Copyright © Nop Solutions, Ltd</Copyright>
+    <Company>Nop Solutions, Ltd</Company>
+    <Authors>Nop Solutions, Ltd</Authors>
+    <Version>4.1.0.0</Version>
+    <Description>This project contains a set of core services, business logic, validations or calculations related with the data, if needed. Some people call it Business Access Layer (BAL).</Description>
+    <PackageLicenseUrl>http://www.nopcommerce.com/licensev3.aspx</PackageLicenseUrl> 
+    <PackageProjectUrl>http://www.nopcommerce.com/</PackageProjectUrl> 
+    <RepositoryUrl>https://github.com/nopSolutions/nopCommerce</RepositoryUrl> 
+    <RepositoryType>Git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CsvHelper" Version="12.1.2" />
+    <PackageReference Include="EPPlus" Version="4.5.3.2" />
+    <PackageReference Include="HtmlAgilityPack" Version="1.11.12" />
+    <PackageReference Include="iTextSharp.LGPLv2.Core" Version="1.5.1" />
+    <PackageReference Include="MaxMind.GeoIP2" Version="3.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OData" Version="7.2.1" />
+    <PackageReference Include="Microsoft.AspNetCore.Routing" Version="2.2.2" />
+    <PackageReference Include="Microsoft.AspNetCore.Routing.Abstractions" Version="2.2.0" />
+    <PackageReference Include="Microsoft.Data.Services.Client" Version="5.8.4" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication" Version="2.2.0" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="1.0.0-beta0004" />
+    <PackageReference Include="System.Linq.Dynamic.Core" Version="1.0.19" />
+    <PackageReference Include="System.ServiceModel.Http" Version="4.6.0" />
+    <PackageReference Include="System.Text.RegularExpressions" Version="4.3.1" />
+    <PackageReference Include="WindowsAzure.Storage" Version="9.3.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nop.Data\Nop.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Update="Security\AclService.cs">
+      <ExcludeFromSourceAnalysis>False</ExcludeFromSourceAnalysis>
+      <ExcludeFromStyleCop>False</ExcludeFromStyleCop>
+    </Compile>
+  </ItemGroup>
+
+</Project>

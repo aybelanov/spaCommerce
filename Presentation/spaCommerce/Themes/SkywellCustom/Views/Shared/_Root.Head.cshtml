@@ -1,0 +1,53 @@
+﻿@using Nop.Core.Domain
+@using Nop.Services.Security
+@using Nop.Core
+
+@inject IPermissionService permissionService
+@inject IWorkContext workContext
+@inject StoreInformationSettings storeInformationSettings
+@inject Nop.Services.Localization.ILanguageService languageService
+@{
+    var displayMiniProfiler = storeInformationSettings.DisplayMiniProfilerInPublicStore
+        && (!storeInformationSettings.DisplayMiniProfilerForAdminOnly || permissionService.Authorize(StandardPermissionProvider.AccessAdminPanel));
+}
+
+<!DOCTYPE html>
+<html lang="@languageService.GetTwoLetterIsoLanguageName(workContext.WorkingLanguage)" @(this.ShouldUseRtlTheme() ? Html.Raw(" dir=\"rtl\"") : null) @Html.NopPageCssClasses()>
+<head>
+    <title>@Html.NopTitle()</title>
+    <meta http-equiv="Content-type" content="text/html;charset=UTF-8" />
+    <meta name="description" content="@(Html.NopMetaDescription())" />
+    <meta name="keywords" content="@(Html.NopMetaKeywords())" />
+    <meta name="generator" content="nopCommerce" />
+
+    @********************Blazor***************************************************************@
+    <base href="~/" />
+    @*****************************************************************************************@
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    @Html.NopHeadCustom()
+    @*This is used so that themes can inject content into the header*@
+    @await Html.PartialAsync("Head")
+    @(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { widgetZone = PublicWidgetZones.HeadHtmlTag }))
+    @*@await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.HeadHtmlTag })*@
+    @Html.NopCssFiles(this.Url, ResourceLocation.Head)
+    @Html.NopScripts(this.Url, ResourceLocation.Head)
+    @Html.NopCanonicalUrls()
+    @(await Html.RenderComponentAsync<NewsRssHeaderLink>(RenderMode.Static))
+    @(await Html.RenderComponentAsync<BlogRssHeaderLink>(RenderMode.Static))
+    @*Favicon - upload favicon.ico file to the root directory*@
+    @(await Html.RenderComponentAsync<Favicon>(RenderMode.Static))
+    @if (displayMiniProfiler)
+    {
+        <mini-profiler />
+    }
+    @Html.NopInlineScripts(this.Url, ResourceLocation.Head)
+    <!--Powered by nopCommerce - https://www.nopCommerce.com-->
+</head>
+<body>
+    @RenderBody()
+    @Html.NopCssFiles(this.Url, ResourceLocation.Footer)
+    @Html.NopScripts(this.Url, ResourceLocation.Footer)
+    @Html.NopInlineScripts(this.Url, ResourceLocation.Footer)
+</body>
+</html>

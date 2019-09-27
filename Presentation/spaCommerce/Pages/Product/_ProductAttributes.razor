@@ -1,0 +1,399 @@
+﻿@using Nop.Core.Domain.Catalog
+@using Nop.Core.Domain.Media
+@using System.Text
+@using Nop.Services.Media
+@using Microsoft.Extensions.Primitives
+@using spaCommerce.Models;
+@inject IDownloadService downloadService
+@inject CatalogSettings catalogSettings
+@inject IShoppingCartComponentService shoppingCartComponentService
+@inject IJSRuntime jsRuntime
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IJSService jsService
+
+@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.CurrencyChanged += OnCurrencyChanged;
+        }
+
+        return base.OnInitializedAsync();
+    }
+
+
+    private void ProductAttributeChanged(string key, ChangeEventArgs e)
+    {
+        jsService.ShowLoadWaiting();
+        var form = Model.ProductAttributes.AttributeFormCollection;
+        form[key] = e.Value.ToString();
+        productModelFactory.AdjustProductDetailsModel(Model);
+        CommonParams.OnProductAttributeChanged(this);
+        jsService.ResetLoadWaiting();
+    }
+
+
+    private void ProductAttributeChangedMultiSelect(string key, int attrValueId, ChangeEventArgs e)
+    {
+        jsService.ShowLoadWaiting();
+        var form = Model.ProductAttributes.AttributeFormCollection;
+        var selectedValues = (form[key].Split(',', StringSplitOptions.RemoveEmptyEntries) ?? new string[] { }).ToList();
+
+        if (bool.Parse(e.Value.ToString()))
+        {
+            selectedValues.Add(attrValueId.ToString());
+            selectedValues.Distinct();
+        }
+        else
+        {
+            selectedValues.Remove(attrValueId.ToString());
+        }
+
+        form[key] = string.Join(',', selectedValues.ToArray());
+
+        productModelFactory.AdjustProductDetailsModel(Model);
+        CommonParams.OnProductAttributeChanged(this);
+        jsService.ResetLoadWaiting();
+    }
+
+
+    private void OnCurrencyChanged(IComponent sender)
+    {
+        jsService.ShowLoadWaiting();
+        int productId = Model?.Id ?? 0;
+        var product = productService.GetProductById(productId);
+
+        if (product == null) return;
+
+        // TODO Need refactoring the ProductAttribute implementation!!! Recalculation of attribute prices (inside attribute labels like vdo3283) and product prices happens 
+        // inside severe places: here and _ProductPrice and may be in other ones in the future.
+        Model.ProductPrice = productModelFactory.PrepareProductPriceModel(product);
+        Model.ProductAttributes = productModelFactory.PrepareProductAttributeModels(product, form: Model.ProductAttributes.AttributeFormCollection);
+        productModelFactory.AdjustProductDetailsModel(Model);
+
+        StateHasChanged();
+        jsService.ResetLoadWaiting();
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        if (Model != null)
+        {
+            var attrs = Model.ProductAttributes.Where(x => x.AttributeControlType == AttributeControlType.FileUpload);
+            foreach (var attr in attrs)
+            {
+                try
+                {
+                    await jsRuntime.InvokeAsync<object>("ProductAttributes.FineUploader",
+                        $"product_attribute_{attr.Id}",
+                        T("Common.FileUploader.DropFiles").Text,
+                        T("Common.FileUploader.Upload").Text,
+                        T("Common.FileUploader.Processing").Text,
+                        T("Common.FileUploader.Cancel").Text,
+                        T("Common.FileUploader.Retry").Text,
+                        T("Common.FileUploader.Delete").Text,
+                        Url.RouteUrl("UploadFileProductattr", new { attrId = attr.Id }),
+                        Html.Raw(string.Join(", ", attr.AllowedFileExtensions.Select(x => "'" + x.Trim() + "'").ToList())),
+                        T("Common.FileUploader.DownloadUploadedFile").Text);
+                }
+                catch { }
+            }
+        }
+    }
+
+
+    public override void Dispose()
+    {
+        CommonParams.CurrencyChanged -= OnCurrencyChanged;
+        base.Dispose();
+    }
+}
+
+
+@if (Model.ProductAttributes != null && Model.ProductAttributes.Count > 0)
+{
+    var form = Model.ProductAttributes.AttributeFormCollection;
+    var disabledAttributeMappingIds = Model.ProductAttributes.DisabledAttributeMappingIds ?? new int[] { };
+    var enabledAttributeMappingIds = Model.ProductAttributes.EnabledAttributeMappingIds ?? new int[] { };
+
+    <div class="attributes">
+        <dl>
+            @foreach (var attr in Model.ProductAttributes)
+            {
+                var controlId = $"product_attribute_{attr.Id}";
+                var textPrompt = !string.IsNullOrEmpty(attr.TextPrompt) ? attr.TextPrompt : attr.Name;
+
+                var showHideInput = enabledAttributeMappingIds.Contains(attr.Id) ? "display:block;" : (disabledAttributeMappingIds.Contains(attr.Id) ? "display:none" : null);
+
+                <dt id="@($"product_attribute_label_{attr.Id}")" style="@showHideInput">
+                    <label class="text-prompt">
+                        @textPrompt
+                    </label>
+                    @if (attr.IsRequired)
+                    {
+                        <span class="required">*</span>
+                    }
+                    @if (!string.IsNullOrEmpty(attr.Description))
+                    {
+                        <div class="attribute-description">
+                            @((MarkupString)attr.Description)
+                        </div>
+                    }
+                </dt>
+
+                <dd id="@($"product_attribute_input_{attr.Id}")" style="@showHideInput">
+                    @switch (attr.AttributeControlType)
+                    {
+                        case AttributeControlType.DropdownList:
+                            {
+                                <select name="@controlId" id="@controlId" value="@form[controlId]" @onchange="@(e => ProductAttributeChanged(controlId, e))">
+
+                                    @if (!attr.IsRequired)
+                                    {
+                                        <option value="0">---</option>
+                                    }
+                                    @foreach (var attrValue in attr.Values)
+                                    {
+                                        var attrName = string.IsNullOrEmpty(attrValue.PriceAdjustment) ?
+                                            attrValue.Name :
+                                            T("Products.ProductAttributes.PriceAdjustment", attrValue.Name, attrValue.PriceAdjustment,
+                                                attrValue.CustomerEntersQty ? T("Products.ProductAttributes.PriceAdjustment.PerItem").Text : string.Empty).Text;
+
+                                        <option selected="@attrValue.IsPreSelected" value="@attrValue.Id">@attrName</option>
+                                    }
+                                </select>
+                                @foreach (var attrValue in attr.Values.Where(value => value.CustomerEntersQty))
+                                {
+                                    var showHideQuantity = form[controlId] == attrValue.Id.ToString() ? "display: inline-block;" : "display:none;";
+                                                
+                                    <div class="qty-box" id="@($"{controlId}_{attrValue.Id}_qty_box")" style="@showHideQuantity">
+                                        <label for="@($"{controlId}_{attrValue.Id}_qty")" style="@showHideQuantity">@(T("Products.ProductAttributes.PriceAdjustment.Quantity").Text)</label>
+                                        <input type="text" value="@form[$"{controlId}_{attrValue.Id}_qty"]" @onchange="@(e => ProductAttributeChanged($"{controlId}_{attrValue.Id}_qty", e))" name="@($"{controlId}_{attrValue.Id}_qty")" id="@($"{controlId}_{attrValue.Id}_qty")" style="@showHideQuantity" />
+                                    </div>
+                                }
+                            }
+                            break;
+                        case AttributeControlType.RadioList:
+                            {
+                                <ul class="option-list">
+                                    @foreach (var attrValue in attr.Values)
+                                    {
+                                        var attrName = string.IsNullOrEmpty(attrValue.PriceAdjustment) ? attrValue.Name : T("Products.ProductAttributes.PriceAdjustment",
+                                        attrValue.Name, attrValue.PriceAdjustment,
+                                        attrValue.CustomerEntersQty ? T("Products.ProductAttributes.PriceAdjustment.PerItem").Text : string.Empty).Text;
+
+                                        var @checked = form[controlId] == attrValue.Id.ToString() ? "checked" : null;
+
+                                        <li>
+                                            <input id="@($"{controlId}_{attrValue.Id}")" type="radio" name="@controlId" value="@form[controlId]" checked="@(@checked)" style="@showHideInput"
+                                                   @onchange="@(e => ProductAttributeChanged(controlId, e))" />
+
+                                            <label for="@(controlId)_@(attr.Id)" style="@showHideInput">@attrName</label>
+
+                                            @if (attrValue.CustomerEntersQty)
+                                            {
+                                                <div class="qty-box" id="@($"{controlId}_{attrValue.Id}_qty_box")" style="@(showHideInput ?? "display:none")">
+                                                    <label for="@($"{controlId}_{attrValue.Id}_qty")" style="@showHideInput">@(T("Products.ProductAttributes.PriceAdjustment.Quantity").Text)</label>
+                                                    <input type="text" name="@($"{controlId}_{attrValue.Id}_qty")" id="@($"{controlId}_{attrValue.Id}_qty")"
+                                                           value="@form[$"{controlId}_{attrValue.Id}_qty"]" @onchange="@(e => ProductAttributeChanged($"{controlId}_{attrValue.Id}_qty", e))"  style="@showHideInput" />
+                                                </div>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            break;
+                        case AttributeControlType.Checkboxes:
+                        case AttributeControlType.ReadonlyCheckboxes:
+                            {
+                                <ul class="option-list">
+                                    @foreach (var attrValue in attr.Values)
+                                    {
+                                        var attrName = string.IsNullOrEmpty(attrValue.PriceAdjustment) ?
+                                            attrValue.Name :
+                                            T("Products.ProductAttributes.PriceAdjustment", attrValue.Name, attrValue.PriceAdjustment,
+                                                attrValue.CustomerEntersQty ? T("Products.ProductAttributes.PriceAdjustment.PerItem").Text : string.Empty).Text;
+
+                                        var selectedValues = (form[controlId]?.Split(',', StringSplitOptions.RemoveEmptyEntries) ?? new string[] { }).ToList();
+
+                                        <li>
+                                            <input id="@($"{controlId}_{attrValue.Id}")" type="checkbox" name="@controlId" value="@form[controlId]" checked="@(selectedValues.Contains(attrValue.Id.ToString()))"
+                                                   disabled=@(attr.AttributeControlType == AttributeControlType.ReadonlyCheckboxes ? "disabled" : null) style="@showHideInput"
+                                                   @onchange=@(e => ProductAttributeChangedMultiSelect(controlId, attrValue.Id, e)) />
+
+                                            <label for="@($"{controlId}_{attrValue.Id}")" style="@showHideInput">@attrName</label>
+
+                                            @if (attrValue.CustomerEntersQty)
+                                            {
+                                                var showHideQuantity = form[controlId] == attrValue.Id.ToString() ? "display: inline-block;" : "display:none;";
+
+                                                <div class="qty-box" id="@($"{controlId}_{attrValue.Id}_qty_box")" style="@showHideQuantity">
+                                                    <label for="@($"{controlId}_{attrValue.Id}_qty")">@(T("Products.ProductAttributes.PriceAdjustment.Quantity").Text)</label>
+                                                    <input type="text" name="@($"{controlId}_{attrValue.Id}_qty")" id="@($"{controlId}_{attrValue.Id}_qty")" value="@form[$"{controlId}_{attrValue.Id}_qty"]"
+                                                           @onchange="@(e=> ProductAttributeChanged($"{controlId}_{attrValue.Id}_qty", e))"/>
+                                                </div>
+                                            }
+                                        </li>
+                                    }
+                                </ul>
+                            }
+                            break;
+                        case AttributeControlType.TextBox:
+                            {
+                                <input name="@controlId" type="text" class="textbox" id="@controlId" @bind="@form[controlId]" style="@showHideInput" />
+                            }
+                            break;
+                        case AttributeControlType.MultilineTextbox:
+                            {
+                                <textarea cols="20" id="@controlId" name="@controlId" @bind="@form[controlId]" style="@showHideInput" />
+                            }
+                            break;
+                        case AttributeControlType.Datepicker:
+                            {
+                                // TODO DatePicker
+                                <nop-date-picker asp-day-name="@(controlId + "_day")"
+                                                 asp-month-name="@(controlId + "_month")"
+                                                 asp-year-name="@(controlId + "_year")"
+                                                 asp-begin-year="@(DateTime.Now.Year)"
+                                                 asp-end-year="@(DateTime.Now.Year + catalogSettings.CountDisplayedYearsDatePicker)"
+                                                 asp-selected-day="@attr.SelectedDay"
+                                                 asp-selected-month="@attr.SelectedMonth"
+                                                 asp-selected-year="@attr.SelectedYear" />
+                            }
+                            break;
+                        // TODO file upload implementation for blazor
+                        case AttributeControlType.FileUpload:
+                            {
+                                // TODO File uploader
+
+                                Download download = null;
+                                if (!string.IsNullOrEmpty(attr.DefaultValue))
+                                {
+                                    download = downloadService.GetDownloadByGuid(new Guid(attr.DefaultValue));
+                                }
+
+                                //register CSS and JS
+                                Html.AddCssFileParts(ResourceLocation.Footer, "~/lib/fineuploader/fine-uploader.min.css");
+                                Html.AddScriptParts(ResourceLocation.Footer, "~/lib/fineuploader/jquery.fine-uploader.min.js");
+
+                                //ex. ['jpg', 'jpeg', 'png', 'gif'] or []
+                                var allowedFileExtensions = string.Join(", ", attr.AllowedFileExtensions.Select(x => "'" + x.Trim() + "'").ToList());
+
+                                if (download != null)
+                                {
+                                    <input id="@controlId" name="@controlId" type="hidden" value="@download.DownloadGuid" />
+                                }
+                                else
+                                {
+                                    <input id="@controlId" name="@controlId" type="hidden" />
+                                }
+
+                                @*fine uploader container*@
+                                <div id="@(controlId)uploader"></div>
+
+                                <div id="@(controlId + "downloadurl")">
+                                    @if (download != null)
+                                    {
+                                        <a href="@(Url.GetPathByAction("GetFileUpload", "Download", new {downloadId = download.DownloadGuid}))" class="download-uploaded-file">@T("Common.FileUploader.DownloadUploadedFile")</a>
+                                    }
+                                </div>
+                                <div>
+                                    @if (download != null)
+                                    {
+                                        <a id="@(controlId + "remove")" class="remove-download-button">@T("Common.FileUploader.RemoveDownload")</a>
+                                    }
+                                    else
+                                    {
+                                        <a id="@(controlId + "remove")" class="remove-download-buttonn" style="display: none;">@T("Common.FileUploader.RemoveDownload")</a>
+                                    }
+                                </div>
+                            }
+                            break;
+                        case AttributeControlType.ColorSquares:
+                            {
+                                <ul class="option-list attribute-squares color-squares" id="color-squares-@(attr.Id)">
+                                    @foreach (var attrValue in attr.Values)
+                                    {
+                                        var attrName = string.IsNullOrEmpty(attrValue.PriceAdjustment) ?
+                                            attrValue.Name :
+                                            T("Products.ProductAttributes.PriceAdjustment", attrValue.Name, attrValue.PriceAdjustment, string.Empty).Text;
+
+                                        var @checked = form[controlId] == attrValue.Id.ToString() ? "checked" : null;
+                                        var selectedValue = form[controlId] == attrValue.Id.ToString() ? "selected-value" : null;
+
+                                        <li class="@selectedValue">
+                                            <label for="@(controlId)_@(attrValue.Id)" style="@showHideInput">
+                                                <span class="attribute-square-container" title="@attrName">
+                                                    <span class="attribute-square" style="background-color:@(attrValue.ColorSquaresRgb);">&nbsp;</span>
+                                                </span>
+                                                <input id="@(controlId)_@(attrValue.Id)" type="radio" name="@(controlId)" value="@attrValue.Id" checked="@(@checked)" style="@showHideInput"
+                                                       @onchange="@(e=> ProductAttributeChanged(controlId, e))" />
+                                            </label>
+                                        </li>
+                                    }
+                                </ul>
+                                foreach (var attrValue in attr.Values.Where(value => value.CustomerEntersQty))
+                                {
+                                    var showHideQuantity = form[controlId] == attrValue.Id.ToString() ? "display: inline-block;" : "display:none;";
+
+                                    <div class="qty-box" id="@($"{controlId}_{attrValue.Id}_qty_box")" style="@showHideQuantity">
+                                        <label for="@($"{controlId}_{attrValue.Id}_qty")">@(T("Products.ProductAttributes.PriceAdjustment.Quantity").Text)</label>
+                                        <input type="text" name="@($"{controlId}_{attrValue.Id}_qty")" id="@($"{controlId}_{attrValue.Id}_qty")"
+                                               value="@form[$"{controlId}_{attrValue.Id}_qty"]" @onchange="@(e=>ProductAttributeChanged($"{controlId}_{attrValue.Id}_qty", e))" />
+                                    </div>
+                                }
+                            }
+                            break;
+                        case AttributeControlType.ImageSquares:
+                            {
+                                <ul class="option-list attribute-squares image-squares" id="@("image-squares-"+attr.Id)">
+                                    @foreach (var attrValue in attr.Values)
+                                    {
+                                        var attrName = string.IsNullOrEmpty(attrValue.PriceAdjustment) ?
+                                            attrValue.Name :
+                                            T("Products.ProductAttributes.PriceAdjustment", attrValue.Name, attrValue.PriceAdjustment, string.Empty).Text;
+
+                                        var @checked = form[controlId] == attrValue.Id.ToString() ? "checked" : null;
+                                        var selectedValue = form[controlId] == attrValue.Id.ToString() ? "selected-value" : null;
+
+                                        <li class="@selectedValue">
+
+                                            <label for="@($"{controlId}_{attrValue.Id}")" style="@showHideInput">
+                                                <span class="attribute-square-container">
+                                                    <span class="attribute-square" style="background: url('@(attrValue.ImageSquaresPictureModel.ImageUrl)') 50% 50% no-repeat;">&nbsp;</span>
+                                                </span>
+                                                <input id="@($"{controlId}_{attrValue.Id}")" type="radio" name="@controlId" value="@attrValue.Id" checked="@(@checked)" style="@showHideInput"
+                                                       @onchange="@(e => ProductAttributeChanged(controlId, e))" />
+                                            </label>
+                                            <div class="tooltip-container">
+                                                <div class="tooltip-header">@attrName</div>
+                                                <div class="tooltip-body"><img src="@(attrValue.ImageSquaresPictureModel.FullSizeImageUrl)" alt="@attrName" /></div>
+                                            </div>
+                                        </li>
+                                    }
+                                </ul>
+                                foreach (var attrValue in attr.Values.Where(value => value.CustomerEntersQty))
+                                {
+                                    var showHideQuantity = form[controlId] == attrValue.Id.ToString() ? "display: inline-block;" : "display:none;";
+
+                                    <div class="qty-box" id="@(controlId)_@(attrValue.Id)_qty_box" style="@showHideQuantity">
+                                        <label for="@(controlId)_@(attrValue.Id)_qty">@(T("Products.ProductAttributes.PriceAdjustment.Quantity").Text)</label>
+                                        <input type="text"  value="@(form[$"{controlId}_{attrValue.Id}_qty"])" @onchange="@(e=>ProductAttributeChanged($"{controlId}_{attrValue.Id}_qty", e))" name="@($"{controlId}_{attrValue.Id}_qty")" id="@($"{controlId}_{attrValue.Id}_qty")" />
+                                    </div>
+                                }
+                            }
+                            break;
+                    }
+                </dd>
+            }
+        </dl>
+    </div>
+    <div id="product-attribute-container" style="display:none;"></div>
+}

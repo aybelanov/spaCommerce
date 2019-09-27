@@ -1,0 +1,86 @@
+﻿@inject IJSRuntime jsRuntime
+
+@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAttributeChanged += OnAttributeChanged;
+        }
+        return base.OnInitializedAsync();
+    }
+
+
+    private void OnAttributeChanged(IComponent sender)
+    {
+        StateHasChanged();
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        if (Model != null)
+        {
+            try
+            {
+                if (Model.DefaultPictureZoomEnabled)
+                {
+                    await jsRuntime.InvokeAsync<object>("_ProductDetailsPictures.MagnificPopup", Model.Id,
+                        T("Media.MagnificPopup.Previous").Text,
+                        T("Media.MagnificPopup.Next").Text,
+                        T("Media.MagnificPopup.Counter").Text,
+                        T("Media.MagnificPopup.Close").Text,
+                        T("Media.MagnificPopup.Loading").Text);
+                }
+
+                if (Model.PictureModels.Count >= 1)
+                {
+                    await jsRuntime.InvokeAsync<object>("_ProductDetailsPictures.ProductDetailsPicturesScript", Model.Id);
+                }
+            }
+            catch { }
+        }
+    }
+
+
+    public override void Dispose()
+    {
+        CommonParams.ProductAttributeChanged -= OnAttributeChanged;
+        base.Dispose();
+    }
+}
+
+<div class="gallery">
+    <div class="picture">
+        @if (Model.DefaultPictureZoomEnabled)
+        {
+            <a data-mfp-src="@Model.DefaultPictureModel.FullSizeImageUrl" title="@Model.DefaultPictureModel.Title" id="main-product-img-lightbox-anchor-@Model.Id">
+                <img alt="@Model.DefaultPictureModel.AlternateText" src="@Model.DefaultPictureModel.ImageUrl" title="@Model.DefaultPictureModel.Title" itemprop="image" id="main-product-img-@Model.Id" />
+            </a>
+        }
+        else
+        {
+            <img alt="@Model.DefaultPictureModel.AlternateText" src="@Model.DefaultPictureModel.ImageUrl" title="@Model.DefaultPictureModel.Title" itemprop="image" id="main-product-img-@Model.Id" />
+        }
+    </div>
+
+    @if (Model.PictureModels.Count >= 1)
+    {
+        <div class="picture-thumbs">
+            @foreach (var picture in Model.PictureModels)
+            {
+                <div class="thumb-item">
+                    <img src="@picture.ThumbImageUrl"
+                         alt="@picture.AlternateText"
+                         title="@picture.Title"
+                         data-defaultsize="@picture.ImageUrl"
+                         data-fullsize="@picture.FullSizeImageUrl" />
+                </div>
+            }
+        </div>
+    }
+</div>

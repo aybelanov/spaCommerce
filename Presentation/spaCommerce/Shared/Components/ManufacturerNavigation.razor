@@ -1,0 +1,69 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject ICatalogModelFactory factory
+@inject NavigationManager uriHelper
+@inject IJSRuntime jsRuntime
+
+@code{
+
+    private ManufacturerNavigationModel Model;
+
+    protected override async Task DataRequest()
+    {
+        try
+        {
+            int currentManufacturerId = GetEntityId("manufacturer");
+            Model = await Task.FromResult<ManufacturerNavigationModel>(factory.PrepareManufacturerNavigationModel(currentManufacturerId));
+        }
+        catch { }
+    }
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("AdditionNavigation.SetBehavior", ".block.block-manufacturer-navigation");
+        }
+        catch { }
+    }
+}
+
+
+@if (needStub)
+{
+    <div class="block block-manufacturer-navigation">
+        <div class="title">
+            <strong>@T("Manufacturers")</strong>
+        </div>
+        <div class="listbox">
+                <LoadingStub />
+        </div>
+    </div>
+}
+else if (Model != null && Model.Manufacturers.Any())
+{
+    <div class="block block-manufacturer-navigation">
+        <div class="title">
+            <strong>@T("Manufacturers")</strong>
+        </div>
+        <div class="listbox">
+            @if (Model.Manufacturers.Count > 0)
+            {
+            <ul class="list">
+                @foreach (var manufacturer in Model.Manufacturers)
+                {
+                    @*<li class="@(manufacturer.IsActive ? "active" : "inactive")">*@
+                    <li>
+                        <NavLink href="@Url.RouteUrl("Manufacturer", new { SeName = manufacturer.SeName })">@manufacturer.Name</NavLink>
+                    </li>
+                    }
+                </ul>
+                @if (Model.TotalManufacturers > Model.Manufacturers.Count)
+                {
+                    <div class="view-all">
+                        <NavLink href="@Url.RouteUrl("ManufacturerList", null)">@T("Manufacturers.ViewAll")</NavLink>
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}

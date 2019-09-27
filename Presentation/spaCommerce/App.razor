@@ -1,0 +1,18 @@
+﻿@code{
+    private CommonParameters Parameters { get; set; } = new CommonParameters();
+}
+
+<CascadingValue TValue="CommonParameters" Value="@Parameters">
+    <Nop.Web.Framework.Components.Routing.Router AppAssembly="@typeof(Program).Assembly">
+        <Found Context="routeData">
+            <AuthorizeRouteView RouteData="@routeData" DefaultLayout="typeof(_ColumnsOne)" />
+        </Found>
+        <NotFound>
+            <CascadingAuthenticationState>
+                <LayoutView Layout="typeof(_ColumnsOne)">
+                    <PageNotFound />
+                </LayoutView>
+            </CascadingAuthenticationState>
+        </NotFound>
+    </Nop.Web.Framework.Components.Routing.Router>
+</CascadingValue>

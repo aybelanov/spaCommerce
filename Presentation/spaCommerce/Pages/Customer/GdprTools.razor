@@ -1,0 +1,147 @@
+﻿@layout _ColumnsTwo
+@inject ICustomerModelFactory customerModelFactory
+@inject NavigationManager uriHelper
+@inject IJSService jsService
+@inject IWorkContext workContext
+@inject Nop.Core.Domain.Gdpr.GdprSettings gdprSettings
+@inject Nop.Services.Gdpr.IGdprService gdprService
+@inject ILocalizationService localizationService
+@inject ICustomerModelFactory customerModelFactory
+@inject IJSRuntime jsRuntime
+@inject Nop.Services.ExportImport.IExportManager exportManager 
+@inject IStoreContext storeContext
+
+@code{
+
+    private GdprToolsModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!gdprSettings.GdprEnabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerInfo"));
+            return;
+        }
+
+        Model = customerModelFactory.PrepareGdprToolsModel();
+    }
+
+
+    private async Task OnExportData(MouseEventArgs args)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!gdprSettings.GdprEnabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerInfo"));
+            return;
+        }
+
+        //log
+        gdprService.InsertLog(workContext.CurrentCustomer, 0, Nop.Core.Domain.Gdpr.GdprRequestType.ExportData, localizationService.GetResource("Gdpr.Exported"));
+
+        //export
+        var bytes = exportManager.ExportCustomerGdprInfoToXlsx(workContext.CurrentCustomer, storeContext.CurrentStore.Id);
+
+        await jsRuntime.InvokeVoidAsync("SaveAsFile", "customerdata.xlsx", bytes);
+    }
+
+
+    private async Task DeleteAccount(MouseEventArgs args)
+    {
+        if (!workContext.CurrentCustomer.IsRegistered())
+        {
+            await jsService.DisplayBarNotification(new[] { "The current user isn't registred." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!gdprSettings.GdprEnabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerInfo"));
+            return;
+        }
+
+        //log
+        gdprService.InsertLog(workContext.CurrentCustomer, 0, Nop.Core.Domain.Gdpr.GdprRequestType.DeleteCustomer, localizationService.GetResource("Gdpr.DeleteRequested"));
+
+        Model = customerModelFactory.PrepareGdprToolsModel();
+        Model.Result = localizationService.GetResource("Gdpr.DeleteRequested.Success");
+
+        StateHasChanged();
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("GdprTools", T("Common.AreYouSure"));
+        }
+        catch { }
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(T("PageTitle.Account").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-account-page");
+    Html.AppendPageCssClassParts("html-gdpt-tools-page");
+
+    <div class="page account-page gdpr-tools-page">
+        <div class="page-title">
+            <h1>@T("Account.MyAccount") - @T("Account.Gdpr")</h1>
+        </div>
+        <div class="page-body">
+            @if (!string.IsNullOrEmpty(Model.Result))
+            {
+                <div class="result">
+                    @Model.Result
+                </div>
+            }
+            <EditForm Model="Model" method="post">
+                <div class="fieldset">
+                    <div class="title">
+                        <strong>@T("Account.Gdpr.Export")</strong>
+                    </div>
+                    <div class="form-fields">
+                        @T("Account.Gdpr.Export.Hint")
+                    </div>
+                    <div class="buttons">
+                        <input type="submit" name="export-data" @onclick="OnExportData" class="button-1 gdpr-export-data-button" value="@T("Account.Gdpr.Export.Button")" />
+                    </div>
+                </div>
+                <div class="fieldset">
+                    <div class="title">
+                        <strong>@T("Account.Gdpr.Delete")</strong>
+                    </div>
+                    <div class="form-fields">
+                        @T("Account.Gdpr.Delete.Hint")
+                    </div>
+                    <div class="buttons">
+                        <input type="submit" id="delete-account" name="delete-account" @onclick="DeleteAccount" class="button-1 gdpr-delete-account-button" value="@T("Account.Gdpr.Delete.Button")" />
+                    </div>
+                </div>
+            </EditForm>
+        </div>
+    </div>
+}

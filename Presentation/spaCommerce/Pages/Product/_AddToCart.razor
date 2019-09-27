@@ -1,0 +1,157 @@
+﻿@using Nop.Core.Domain.Orders
+@inject IJSRuntime jsRuntime
+@inject IShoppingCartComponentService shoppingCartComponentService
+@inject NavigationManager uriHelper
+@inject IJSService  jsService
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+
+
+@code{
+
+    [Parameter] public ProductDetailsModel.AddToCartModel Model { get; set; }
+
+    [CascadingParameter] EditContext EditContext { get; set; }
+
+    ElementReference quantityInput;
+
+
+    protected override Task DataRequest()
+    {
+        var updatecartitemid = uriHelper.GetQueryParameterValues<int>("updatecartitemid")?.FirstOrDefault() ?? 0;
+
+        if (updatecartitemid > 0)
+        {
+            // find the pointed id in user's carts
+            var existCartId = workContext.CurrentCustomer.ShoppingCartItems
+                        .Where(x => x.ShoppingCartType == ShoppingCartType.ShoppingCart)
+                        .LimitPerStore(storeContext.CurrentStore.Id)
+                        .FirstOrDefault(x => x.Id == updatecartitemid)?.Id ?? 0;
+
+            if (existCartId > 0)
+            {
+                Model.UpdatedShoppingCartItemId = updatecartitemid;
+                Model.UpdateShoppingCartItemType = ShoppingCartType.ShoppingCart;
+            }
+        }
+
+        return base.DataRequest();
+    }
+
+
+    protected async Task AddProductToCartDetails()
+    {
+        await jsService.ShowLoadWaiting();
+
+        // we are gathering all forms: in attributes and in an entered quantity
+        var selectedAtributes = ((ProductDetailsModel)EditContext.Model).ProductAttributes;
+        selectedAtributes.AttributeFormCollection[$"addtocart_{Model.ProductId}.EnteredQuantity"] = Model.EnteredQuantity.ToString();
+
+        if (Model.UpdatedShoppingCartItemId > 0)
+            selectedAtributes.AttributeFormCollection[$"addtocart_{Model.ProductId}.UpdatedShoppingCartItemId"] = Model.UpdatedShoppingCartItemId.ToString();
+
+        var addToCartSummary = shoppingCartComponentService.AddProductToCart_Details(Model.ProductId, (int)ShoppingCartType.ShoppingCart, selectedAtributes.Form);
+
+        if (!string.IsNullOrEmpty(addToCartSummary.RedirectUrl))
+        {
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(addToCartSummary.RedirectUrl);
+            return;
+        }
+
+        CommonParams.OnProductAddedToCart(this, new ProductAddedToCartEventArgs()
+        {
+            CartType = ShoppingCartType.ShoppingCart
+        });
+
+        await jsService.ShowNotifications(addToCartSummary);
+        await jsService.ResetLoadWaiting();
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("AddToCartScript", quantityInput, Model.ProductId);
+        }
+        catch { }
+    }
+}
+
+@if (Model.UpdatedShoppingCartItemId > 0)
+{
+    <input @bind="@Model.UpdatedShoppingCartItemId" type="hidden" />
+}
+@if (!Model.DisableBuyButton || Model.CustomerEntersPrice)
+{
+    <div class="add-to-cart">
+        @if (Model.CustomerEntersPrice)
+        {
+            <div class="customer-entered-price">
+                <div class="price-input">
+                    <label asp-for="CustomerEnteredPrice" asp-postfix=":" class="enter-price-label"></label>
+                    @*round price*@
+                    <input value="@Convert.ToInt32(Math.Ceiling(Model.CustomerEnteredPrice))" @onchange="@(e => Model.CustomerEnteredPrice = Convert.ToDecimal(e.Value))" class="enter-price-input" />
+                </div>
+                <div class="price-range">
+                    @Model.CustomerEnteredPriceRange
+                </div>
+            </div>
+        }
+        @if (!string.IsNullOrEmpty(Model.MinimumQuantityNotification))
+        {
+            <div class="min-qty-notification">@Model.MinimumQuantityNotification</div>
+        }
+        @if (!Model.DisableBuyButton)
+        {
+            <div class="add-to-cart-panel">
+                <label asp-for="EnteredQuantity" asp-postfix=":" class="qty-label"></label>
+                @if (Model.AllowedQuantities.Count > 0)
+                {
+                    <InputSelect @bind-Value="@Model.EnteredQuantity" class="qty-dropdown">
+                        @foreach (var quantity in Model.AllowedQuantities)
+                        {
+                            <option selected="@quantity.Selected" value="@quantity.Value">@quantity.Text</option>
+                        }
+
+                    </InputSelect>
+                }
+                else
+                {
+                    <input type="number"  @bind-value="@Model.EnteredQuantity" class="qty-input"  @ref="quantityInput"  />
+                }
+                @{
+                    var addToCartText = "";
+                    if (Model.UpdatedShoppingCartItemId > 0 && Model.UpdateShoppingCartItemType.HasValue && Model.UpdateShoppingCartItemType.Value == ShoppingCartType.ShoppingCart)
+                    {
+                        addToCartText = T("ShoppingCart.AddToCart.Update").Text;
+                    }
+                    else
+                    {
+                        addToCartText = T("ShoppingCart.AddToCart").Text;
+                        if (Model.IsRental)
+                        {
+                            addToCartText = T("ShoppingCart.Rent").Text;
+                        }
+                        if (Model.AvailableForPreOrder)
+                        {
+                            addToCartText = T("ShoppingCart.PreOrder").Text;
+                        }
+                    }
+
+                    <input type="button" id="add-to-cart-button-@Model.ProductId" class="button-1 add-to-cart-button" value="@addToCartText" data-productid="@Model.ProductId" @onclick="@AddProductToCartDetails" />
+               }
+                
+            </div>
+            if (!string.IsNullOrEmpty(Model.PreOrderAvailabilityStartDateTimeUserTime))
+            {
+                <div class="pre-order-availability-date">
+                    <label>@T("ShoppingCart.PreOrderAvailability"):</label>
+                    @((MarkupString)Model.PreOrderAvailabilityStartDateTimeUserTime)
+                </div>
+            }
+        }
+        <Widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ProductDetailsAddInfo" />
+    </div>
+}

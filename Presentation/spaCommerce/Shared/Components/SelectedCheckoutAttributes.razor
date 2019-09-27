@@ -1,0 +1,52 @@
+@inject IShoppingCartModelFactory shoppingCartModelFactory
+@inject IJSService jsService
+
+@code {
+
+    private string Model { get; set; }
+
+    [Parameter] public bool IsEditable { get; set; }
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.CheckoutAttributeChanged += OnCheckoutAttributeChanged;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    private async void OnCheckoutAttributeChanged(IComponent component)
+    {
+        await DataRequest();
+        StateHasChanged();
+    }
+
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult(shoppingCartModelFactory.FormatSelectedCheckoutAttributes());
+    }
+
+
+    public override void Dispose()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.CheckoutAttributeChanged -= OnCheckoutAttributeChanged;
+        }
+
+        base.Dispose();
+    }
+
+}
+
+
+@if (!string.IsNullOrWhiteSpace(Model))
+{
+    <div class="selected-checkout-attributes">
+        @((MarkupString)Model)
+    </div>
+}

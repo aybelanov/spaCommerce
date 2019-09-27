@@ -1,0 +1,97 @@
+﻿@page "/sitemap"
+@inherits SpaGenericPageComponent
+@layout _ColumnsOne
+@using Nop.Core.Domain.Common
+@inject ICommonModelFactory commonModelFactory
+@inject CommonSettings commonSettings
+@inject NavigationManager uriHelper
+@namespace spaCommerce.Pages.Common
+
+@functions{
+
+    protected SitemapPageModel PageModel { get; set; }
+
+    [Parameter] public string Query { get; set; }
+
+    protected SitemapModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        if (!commonSettings.SitemapEnabled)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        try
+        {
+            Model = new SitemapModel();
+            Model.PageModel = uriHelper.SetModelFromQuery<SitemapPageModel>();
+            Model = await Task.FromResult<SitemapModel>(commonModelFactory.PrepareSitemapModel(Model.PageModel));
+        }
+        catch { }
+    }
+
+}
+
+@if (needStub && CommonParams.Router.IsAbsolutePathChanged())
+{
+    <div class="page sitemap-page">
+        <div class="page-title">
+            <h1>@T("Sitemap")</h1>
+        </div>
+        <div class="page-body">
+            <div class="description">
+                @T("Sitemap.Description")
+            </div>
+            <LoadingStub />
+        </div>
+    </div>
+}
+else if (Model != null)
+{
+
+    //title
+    Html.AddTitleParts(T("PageTitle.Sitemap").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-sitemap-page");
+
+    <div class="page sitemap-page">
+        <div class="page-title">
+            <h1>@T("Sitemap")</h1>
+        </div>
+        <div class="page-body">
+            <div class="description">
+                @T("Sitemap.Description")
+            </div>
+            <Widget WidgetZone="@PublicWidgetZones.SitemapBefore" />
+            <Pager Model="@Model.PageModel" />
+            @if (needStub)
+            {
+                <LoadingStub></LoadingStub>
+            }
+            else
+            {
+                @foreach (var itemGroup in Model.Items.GroupBy(itemGroup => itemGroup.GroupTitle))
+                {
+                    <div class="entity">
+                        <div class="entity-title">
+                            <h2>@itemGroup.Key</h2>
+                        </div>
+                        <div class="entity-body">
+                            <ul>
+                                @foreach (var item in itemGroup.ToList())
+                                {
+                                    <li><a href="@item.Url">@item.Name</a></li>
+                                }
+                            </ul>
+                        </div>
+                    </div>
+                }
+            }
+            <Pager Model="@Model.PageModel" />
+            <Widget WidgetZone="@PublicWidgetZones.SitemapAfter" />
+        </div>
+    </div>
+}

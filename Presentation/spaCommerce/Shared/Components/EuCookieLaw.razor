@@ -1,0 +1,42 @@
+﻿@using Nop.Core.Domain.Customers
+@using Nop.Core
+@using Nop.Services.Common
+@using Nop.Core.Domain
+@inject IGenericAttributeService _genericAttributeService
+@inject IStoreContext _storeContext
+@inject IWorkContext _workContext
+@inject StoreInformationSettings _storeInformationSettings
+@inject IHttpContextAccessor _accessor
+@inject IJSRuntime _jsRuntime
+
+@code{
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            if (_storeInformationSettings.DisplayEuCookieLawWarning && !_workContext.CurrentCustomer.IsSearchEngineAccount()
+                && !_genericAttributeService.GetAttribute<bool>(_workContext.CurrentCustomer, NopCustomerDefaults.EuCookieLawAcceptedAttribute, _storeContext.CurrentStore.Id))
+            {
+                await _jsRuntime.InvokeAsync<object>("EuCookieLaw", Url.RouteUrl("EuCookieLawAccept"));
+            }
+        }
+        catch { }
+    }
+}
+
+@if (_storeInformationSettings.DisplayEuCookieLawWarning
+&& !_workContext.CurrentCustomer.IsSearchEngineAccount()
+&& !_genericAttributeService.GetAttribute<bool>(_workContext.CurrentCustomer, NopCustomerDefaults.EuCookieLawAcceptedAttribute, _storeContext.CurrentStore.Id))
+{
+    <div id="eu-cookie-bar-notification" class="eu-cookie-bar-notification">
+        <div class="content">
+            <div class="text">@T("EUCookieLaw.Description2")</div>
+            <div class="buttons-more">
+                <button type="button" class="ok-button button-1" id="eu-cookie-ok">@T("Common.OK")</button>
+                <a class="learn-more" href="@Url.RouteUrl("Topic", new { SeName = Html.GetTopicSeName("privacyinfo") })">@T("EUCookieLaw.LearnMore")</a>
+            </div>
+        </div>
+    </div>
+}

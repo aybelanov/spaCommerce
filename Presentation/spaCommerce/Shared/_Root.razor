@@ -1,0 +1,26 @@
+﻿@* Because it is the toppest layout of the <app>-tag. Upper only the index page is located. *@
+@*@layout _Root_Head*@
+
+<Widget WidgetZone="@PublicWidgetZones.BodyStartHtmlTagAfter" />
+<_Notifications />
+<_JavaScriptDisabledWarning />
+<_OldInternetExplorerWarning />
+<div class="master-wrapper-page">
+    <AdminHeaderLinks />
+    <_Header />
+    <div class="header-menu">
+        <TopMenu />
+    </div>
+    <div class="master-wrapper-content">
+        <Widget WidgetZone="@PublicWidgetZones.ContentBefore" />
+        @RenderSection("Breadcrumb")
+        <div class="master-column-wrapper">
+            @Body
+        </div>
+        <Widget WidgetZone="@PublicWidgetZones.ContentAfter" />
+    </div>
+    <Footer />
+</div>
+<EuCookieLaw />
+<Widget WidgetZone="@PublicWidgetZones.BodyEndHtmlTagBefore" />
+

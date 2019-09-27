@@ -1,0 +1,88 @@
+﻿@using Nop.Core.Domain.Orders
+@inject IJSRuntime jsRuntime
+@inject IJSService jsService
+@inject IShoppingCartComponentService shoppingCartComponentService
+@inject NavigationManager uriHelper
+@inject IProductService productService
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+
+
+@code{
+
+    [Parameter] public ProductDetailsModel.AddToCartModel Model { get; set; }
+    [CascadingParameter] EditContext EditContext { get; set; }
+
+
+    protected override Task DataRequest()
+    {
+        var updatecartitemid = uriHelper.GetQueryParameterValues<int>("updatecartitemid")?.FirstOrDefault() ?? 0;
+        
+        if (updatecartitemid > 0)
+        {
+            // find the pointed id in user's carts
+            var existCartId = workContext.CurrentCustomer.ShoppingCartItems
+                        .Where(x => x.ShoppingCartType == ShoppingCartType.Wishlist)
+                        .LimitPerStore(storeContext.CurrentStore.Id)
+                        .FirstOrDefault(x => x.Id == updatecartitemid)?.Id ?? 0;
+
+            if (existCartId > 0)
+            {
+                Model.UpdatedShoppingCartItemId = updatecartitemid;
+                Model.UpdateShoppingCartItemType = ShoppingCartType.Wishlist;
+            }
+        }
+
+        return base.DataRequest();
+    }
+
+
+    private async Task AddProductToCartDetais()
+    {
+        await jsService.ShowLoadWaiting();
+
+        // we are gathering all forms: in attributes and in an entered quantity
+        var selectedAtributes = ((ProductDetailsModel)EditContext.Model).ProductAttributes;
+        selectedAtributes.AttributeFormCollection[$"addtocart_{Model.ProductId}.EnteredQuantity"] = Model.EnteredQuantity.ToString();
+
+        if (Model.UpdatedShoppingCartItemId > 0)
+            selectedAtributes.AttributeFormCollection[$"addtocart_{Model.ProductId}.UpdatedShoppingCartItemId"] = Model.UpdatedShoppingCartItemId.ToString();
+
+        var addToCartSummary = shoppingCartComponentService.AddProductToCart_Details(Model.ProductId, (int)ShoppingCartType.Wishlist, selectedAtributes.Form);
+
+        if (!string.IsNullOrEmpty(addToCartSummary.RedirectUrl))
+        {
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(addToCartSummary.RedirectUrl);
+            return;
+        }
+
+        CommonParams.OnProductAddedToCart(this, new ProductAddedToCartEventArgs()
+        {
+            //Product = productService.GetProductById(Model.ProductId),
+            CartType = ShoppingCartType.Wishlist
+        });
+
+        await jsService.ShowNotifications(addToCartSummary);
+        await jsService.ResetLoadWaiting();
+
+        //AjaxCart.addproducttocart_details('@Url.RouteUrl("AddProductToCart-Details", new {productId = Model.ProductId, shoppingCartTypeId = (int) ShoppingCartType.Wishlist})', '#product-details-form');return false;
+    }
+}
+
+
+@if (!Model.DisableWishlistButton)
+{
+    var addToWishlistText = "";
+    if (Model.UpdatedShoppingCartItemId > 0 && Model.UpdateShoppingCartItemType.HasValue && Model.UpdateShoppingCartItemType.Value == ShoppingCartType.Wishlist)
+    {
+        addToWishlistText = T("Products.Wishlist.AddToWishlist.Update").Text;
+    }
+    else
+    {
+        addToWishlistText = T("Products.Wishlist.AddToWishlist").Text;
+    }
+    <div class="add-to-wishlist">
+        <input type="button" id="add-to-wishlist-button-@Model.ProductId" class="button-2 add-to-wishlist-button" value="@addToWishlistText" data-productid="@Model.ProductId" @onclick="@AddProductToCartDetais" />
+    </div>
+}

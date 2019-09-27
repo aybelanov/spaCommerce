@@ -1,0 +1,102 @@
+﻿@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+    [Parameter] public EventCallback<EditContext> OnValidSubmit { get; set; }
+    [Parameter] public EventCallback<EditContext> OnInvalidSubmit { get; set; }
+}
+
+<Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsAfterBreadcrumb" />
+<div class="page product-details-page">
+    <div class="page-body">
+        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsTop" />
+        <EditForm Model="@Model" OnValidSubmit="@OnValidSubmit" OnInvalidSubmit="@OnInvalidSubmit" id="product-details-form">
+            <FluentValidationValidator />
+            <div itemscope itemtype="http://schema.org/Product" data-productid="@Model.Id">
+                <div class="product-essential">
+                    <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsBeforePictures" />
+                    <!--product pictures-->
+                    <_ProductDetailsPictures Model="@Model" />
+                    <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsAfterPictures" />
+                    <div class="overview">
+                        <_Discontinued Model="@Model" />
+                        <div class="product-name">
+                            <h1 itemprop="name">
+                                @Model.Name
+                            </h1>
+                        </div>
+                        <meta itemprop="brand" content="@Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(Model.ProductSpecifications.FirstOrDefault(x => x.SpecificationAttributeName == "Брэнд" || x.SpecificationAttributeName == "Brand")?.ValueRaw ?? "unknown"))" />
+                        <meta itemprop="productID" content="@Html.Encode(Nop.Core.Html.HtmlHelper.StripTags(string.IsNullOrWhiteSpace(Model.Sku) ? Model.Id.ToString() : Model.Sku))" />
+
+                        @if (!string.IsNullOrEmpty(Model.ShortDescription))
+                        {
+                            <div class="short-description" itemprop="description">
+                                @((MarkupString)Model.ShortDescription)
+                            </div>
+                        }
+                        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsOverviewTop" />
+
+                        <!--product reviews-->
+                        <_ProductReviewOverview Model="@Model.ProductReviewOverview" />
+
+                        <!--manufacturers-->
+                        <_ProductManufacturers Model="@Model.ProductManufacturers" />
+
+                        <!--availability-->
+                        <_Availability Model="@Model" />
+
+                        <!--SKU, MAN, GTIN, vendor-->
+                        <_SKU_Man_GTIN_Ven Model="@Model" />
+
+                        <!--delivery-->
+                        <_DeliveryInfo Model="@Model" />
+
+                        <!--sample download-->
+                        <_DownloadSample Model="@Model" />
+
+                        <!--attributes-->
+                        <_ProductAttributes Model="@Model" />
+
+                        <!--gift card-->
+                        <_GiftCardInfo Model="@Model.GiftCard" />
+
+                        <!--rental info-->
+                        <_RentalInfo Model="@Model" />
+
+                        <!--price & add to cart-->
+                        <_ProductPrice Model="@Model.ProductPrice" />
+                        <_ProductTierPrices Model="@Model.TierPrices" />
+                        <_AddToCart Model="@Model.AddToCart" />
+
+                        <!--wishlist, compare, email a friend-->
+                        <div class="overview-buttons">
+                            <Widget WidgetZone="@PublicWidgetZones.ProductDetailsInsideOverviewButtonsBefore" AdditionalData="@Model.Id" />
+
+                            <_AddToWishlist Model="@Model.AddToCart" />
+
+                            <_CompareProductsButton Model="@Model" />
+                            <_ProductEmailAFriendButton Model="@Model" />
+                            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsInsideOverviewButtonsAfter" />
+                        </div>
+                        <_ShareButton Model="@Model" />
+                        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsOverviewBottom" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.FullDescription))
+                    {
+                        <div class="full-description">
+                            @((MarkupString)Model.FullDescription)
+                        </div>
+                    }
+                </div>
+                <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsBeforeCollateral" />
+                <div class="product-collateral">
+                    <_ProductSpecifications Model="@Model.ProductSpecifications" />
+                    <_ProductTags Model="@Model.ProductTags" />
+                </div>
+                <ProductsAlsoPurchased ProductId="@Model.Id" />
+                <RelatedProducts ProductId="@Model.Id" />
+            </div>
+
+        </EditForm>
+        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsBottom" />
+    </div>
+</div>

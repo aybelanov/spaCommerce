@@ -1,0 +1,254 @@
+﻿@page "/checkout/confirm"
+@layout _ColumnsOne
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject ICheckoutModelFactory checkoutModelFactory
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IJSRuntime jsRuntime
+@inject Nop.Services.Logging.ILogger logger
+@inject IPaymentService paymentService
+@inject IOrderProcessingService orderProcessingService
+@inject ILocalizationService localizationService
+@inject IOrderService orderService
+@inject ITopicModelFactory topicModelFactory
+
+@code {
+
+    private CheckoutConfirmModel Model { get; set; }
+    private bool termOfServiceAccept;
+    private ElementReference confirmButton;
+    private ElementReference confirmButtonStub;
+
+    protected override async Task DataRequest()
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        //if (_orderSettings.OnePageCheckoutEnabled)
+        //    return RedirectToRoute("CheckoutOnePage");
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //model
+        Model = checkoutModelFactory.PrepareConfirmOrderModel(cart);
+    }
+
+
+    private async Task ReadConditionsOfUse()
+    {
+        var term = topicModelFactory.PrepareTopicModelBySystemName("conditionsofuse");
+        if (term != null)
+        {
+            //template
+            var templateViewPath = topicModelFactory.PrepareTemplateViewPath(term.TopicTemplateId);
+
+            await jsService.DisplayPopupContent(term.Body, T("Checkout.TermsOfService").Text, true);
+        }
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        if (!termOfServiceAccept)
+        {
+            await jsService.DisplayPopupContent(T("Checkout.TermsOfService.PleaseAccept").Text, T("Checkout.TermsOfService").Text, true);
+            return;
+        }
+
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("DisableElementWithWaiting", confirmButton, confirmButtonStub);
+        }
+        catch { }
+
+        //model
+        Model = checkoutModelFactory.PrepareConfirmOrderModel(cart);
+        try
+        {
+            var processPaymentRequest = CommonParams.ProcessPaymentRequest;
+
+            if (processPaymentRequest == null)
+            {
+                //Check whether payment workflow is required
+                if (orderProcessingService.IsPaymentWorkflowRequired(cart))
+                {
+                    uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentInfo"));
+                    return;
+                }
+                processPaymentRequest = new ProcessPaymentRequest();
+            }
+
+            //prevent 2 orders being placed within an X seconds time frame
+            if (!IsMinimumOrderPlacementIntervalValid(workContext.CurrentCustomer))
+                throw new Exception(localizationService.GetResource("Checkout.MinOrderPlacementInterval"));
+
+            //place order
+            processPaymentRequest.StoreId = storeContext.CurrentStore.Id;
+            processPaymentRequest.CustomerId = workContext.CurrentCustomer.Id;
+            processPaymentRequest.PaymentMethodSystemName = genericAttributeService.GetAttribute<string>(workContext.CurrentCustomer,
+                NopCustomerDefaults.SelectedPaymentMethodAttribute, storeContext.CurrentStore.Id);
+
+            var placeOrderResult = orderProcessingService.PlaceOrder(processPaymentRequest);
+
+            if (placeOrderResult.Success)
+            {
+                CommonParams.ProcessPaymentRequest = null;
+                var postProcessPaymentRequest = new PostProcessPaymentRequest
+                {
+                    Order = placeOrderResult.PlacedOrder
+                };
+
+                //try
+                //{
+                //    await jsRuntime.InvokeVoidAsync("EnableElementWithWaiting", confirmButton, confirmButtonStub);
+                //}
+                //catch { }
+
+                paymentService.PostProcessPayment(postProcessPaymentRequest);
+
+                uriHelper.NavigateTo(Url.RouteUrl("CheckoutCompleted", new { orderId = placeOrderResult.PlacedOrder.Id }));
+                return;
+            }
+
+            foreach (var error in placeOrderResult.Errors)
+                Model.Warnings.Add(error);
+        }
+        catch (Exception exc)
+        {
+            logger.Warning(exc.Message, exc);
+            Model.Warnings.Add(exc.Message);
+        }
+    }
+
+
+    private bool IsMinimumOrderPlacementIntervalValid(Customer customer)
+    {
+        //prevent 2 orders being placed within an X seconds time frame
+        if (orderSettings.MinimumOrderPlacementInterval == 0)
+            return true;
+
+        var lastOrder = orderService.SearchOrders(storeId: storeContext.CurrentStore.Id,
+            customerId: workContext.CurrentCustomer.Id, pageSize: 1)
+            .FirstOrDefault();
+        if (lastOrder == null)
+            return true;
+
+        var interval = DateTime.UtcNow - lastOrder.CreatedOnUtc;
+        return interval.TotalSeconds > orderSettings.MinimumOrderPlacementInterval;
+    }
+}
+
+<div class="page checkout-page order-confirm-page">
+    <CheckoutProgress Step="CheckoutProgressStep.Confirm" />
+    <div class="page-title">
+        <h1>@T("Checkout.ConfirmYourOrder")</h1>
+    </div>
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Checkout").Text);
+        //page class
+        Html.AppendPageCssClassParts("html-checkout-page");
+        Html.AppendPageCssClassParts("html-order-confirm-page");
+
+
+        <div class="page-body checkout-data">
+            <Widget WidgetZone="PublicWidgetZones.CheckoutConfirmTop" />
+            <div class="section confirm-order">
+                <EditForm Model="Model" OnValidSubmit="OnValidSubmit" method="post" id="confirm-order-form">
+                    @if (!string.IsNullOrEmpty(Model.MinOrderTotalWarning))
+                    {
+                        <span class="min-order-warning">@Model.MinOrderTotalWarning</span>
+                    }
+                    else
+                    {
+                        if (Model.TermsOfServiceOnOrderConfirmPage)
+                        {
+                            @*<div id="terms-of-service-warning-box" @ref="termsWarningBox" title="@T("Checkout.TermsOfService")" style="display: none;">
+                                    <p>@T("Checkout.TermsOfService.PleaseAccept")</p>
+                                </div>*@
+                            <div class="terms-of-service">
+                                <input @bind-value="termOfServiceAccept" id="termsofservice" type="checkbox" name="termsofservice" />
+                                <label for="termsofservice">@T("Checkout.TermsOfService.IAccept")</label>
+                                @if (Model.TermsOfServicePopup)
+                                {
+                                    <a class="read" id="read-terms" @onclick="ReadConditionsOfUse">@T("Checkout.TermsOfService.Read")</a>
+                                }
+                                else
+                                {
+                                    <a class="read" id="read-terms" href="@Url.RouteUrl("Topic", new { SeName = Html.GetTopicSeName("conditionsofuse") })">@T("Checkout.TermsOfService.Read")</a>
+                                }
+                            </div>
+                        }
+                        <div class="buttons">
+                            <input type="submit" @ref="confirmButton" name="nextstep" value="@T("Checkout.ConfirmButton")" class="button-1 confirm-order-next-step-button" />
+                            <div @ref="confirmButtonStub" class="button-load-waiting" style="display:none;" />
+                        </div>
+                    }
+                    @if (Model.Warnings.Count > 0)
+                    {
+                        <div class="message-error">
+                            <ul>
+                                @foreach (var warning in Model.Warnings)
+                                {
+                                    <li>@warning</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                </EditForm>
+            </div>
+            <Widget WidgetZone="PublicWidgetZones.CheckoutConfirmBottom" />
+            <div class="section order-summary">
+                <OrderSummary PrepareAndDisplayOrderReviewData="true" />
+            </div>
+        </div>
+    }
+</div>

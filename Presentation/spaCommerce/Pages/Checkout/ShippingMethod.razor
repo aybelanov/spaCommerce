@@ -1,0 +1,233 @@
+﻿@page "/checkout/shippingmethod"
+@layout _ColumnsOne
+@using Nop.Core.Domain.Shipping
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject ICheckoutModelFactory checkoutModelFactory
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IShoppingCartService shoppingCartService
+@inject ShippingSettings shippingSettings
+@inject IAddressAttributeParser addressAttributeParser
+@inject IAddressService addressService
+@inject IJSRuntime jsRuntime
+@inject ILocalizationService localizationService
+@inject Nop.Services.Shipping.IShippingService shippingService
+
+
+@code
+{
+    private CheckoutShippingMethodModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!shoppingCartService.ShoppingCartRequiresShipping(cart))
+        {
+            genericAttributeService.SaveAttribute<ShippingOption>(workContext.CurrentCustomer, NopCustomerDefaults.SelectedShippingOptionAttribute, null, storeContext.CurrentStore.Id);
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentMethod"));
+        }
+
+        //model
+        Model = checkoutModelFactory.PrepareShippingMethodModel(cart, workContext.CurrentCustomer.ShippingAddress);
+
+        if (shippingSettings.BypassShippingMethodSelectionIfOnlyOne &&
+            Model.ShippingMethods.Count == 1)
+        {
+            //if we have only one shipping method, then a customer doesn't have to choose a shipping method
+            genericAttributeService.SaveAttribute(workContext.CurrentCustomer,
+                NopCustomerDefaults.SelectedShippingOptionAttribute,
+                Model.ShippingMethods.First().ShippingOption,
+                storeContext.CurrentStore.Id);
+
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentMethod"));
+        }
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (!shoppingCartService.ShoppingCartRequiresShipping(cart))
+        {
+            genericAttributeService.SaveAttribute<ShippingOption>(workContext.CurrentCustomer,
+                NopCustomerDefaults.SelectedShippingOptionAttribute, null, storeContext.CurrentStore.Id);
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentMethod"));
+        }
+
+        var selectedMethod = Model.ShippingMethods.Where(x=>x.Selected).FirstOrDefault();
+        if (selectedMethod == null)
+        {
+            await DataRequest();
+            return;
+        }
+
+        var selectedName = selectedMethod.Name;
+        var shippingRateComputationMethodSystemName = selectedMethod.ShippingRateComputationMethodSystemName;
+
+        //find it
+        //performance optimization. try cache first
+        var shippingOptions = genericAttributeService.GetAttribute<List<ShippingOption>>(workContext.CurrentCustomer,
+            NopCustomerDefaults.OfferedShippingOptionsAttribute, storeContext.CurrentStore.Id);
+        if (shippingOptions == null || !shippingOptions.Any())
+        {
+            //not found? let's load them using shipping service
+            shippingOptions = shippingService.GetShippingOptions(cart, workContext.CurrentCustomer.ShippingAddress,
+                workContext.CurrentCustomer, shippingRateComputationMethodSystemName, storeContext.CurrentStore.Id).ShippingOptions.ToList();
+        }
+        else
+        {
+            //loaded cached results. let's filter result by a chosen shipping rate computation method
+            shippingOptions = shippingOptions.Where(so => so.ShippingRateComputationMethodSystemName.Equals(shippingRateComputationMethodSystemName, StringComparison.InvariantCultureIgnoreCase))
+                .ToList();
+        }
+
+        var shippingOption = shippingOptions
+            .Find(so => !string.IsNullOrEmpty(so.Name) && so.Name.Equals(selectedName, StringComparison.InvariantCultureIgnoreCase));
+        if (shippingOption == null)
+        {
+            await DataRequest();
+            return;
+        }
+
+        //save
+        genericAttributeService.SaveAttribute(workContext.CurrentCustomer, NopCustomerDefaults.SelectedShippingOptionAttribute, shippingOption, storeContext.CurrentStore.Id);
+
+        uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentMethod"));
+    }
+}
+
+<div class="page checkout-page shipping-method-page">
+    <CheckoutProgress Step=@CheckoutProgressStep.Shipping />
+    <div class="page-title">
+        <h1>@T("Checkout.SelectShippingMethod")</h1>
+    </div>
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Checkout").Text);
+        //page class
+        Html.AppendPageCssClassParts("html-checkout-page");
+        Html.AppendPageCssClassParts("html-shipping-method-page");
+
+        <div class="page-body checkout-data">
+            <div class="section shipping-method">
+                <EditForm Model="Model" OnValidSubmit="OnValidSubmit" method="post">
+                    <Widget WidgetZone=@PublicWidgetZones.CheckoutShippingMethodTop />
+                    @if (Model.Warnings.Count == 0)
+                    {
+                        <ul class="method-list">
+                            @for (var i = 0; i < Model.ShippingMethods.Count; i++)
+                            {
+                                var shippingMethod = Model.ShippingMethods[i];
+                                <li>
+                                    <div class="method-name">
+                                        <input id="shippingoption_@(i)" type="radio" name="shippingoption" value="@(shippingMethod.Name)___@(shippingMethod.ShippingRateComputationMethodSystemName)" checked="@shippingMethod.Selected"
+                                               @onchange="@(e =>
+                                                            {
+                                                                Model.ShippingMethods.ToList().ForEach(x => x.Selected = false);
+                                                                shippingMethod.Selected = true;
+                                                            })"/>
+
+                                        <label for="shippingoption_@(i)">@T("Checkout.SelectShippingMethod.MethodAndFee", shippingMethod.Name, shippingMethod.Fee)</label>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(shippingMethod.Description))
+                                    {
+                                        <div class="method-description">
+                                            @((MarkupString)shippingMethod.Description)
+                                        </div>
+                                    }
+                                </li>
+                            }
+                        </ul>
+                        if (Model.NotifyCustomerAboutShippingFromMultipleLocations)
+                        {
+                            <div class="multiple-locations">
+                                @T("Checkout.ShippingMethod.ShippingFromMultipleLocations")
+                            </div>
+                        }
+                        <div class="buttons">
+                            <input type="submit" name="nextstep" value="@T("Checkout.NextButton")" class="button-1 shipping-method-next-step-button" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="message-error">
+                            <ul>
+                                @foreach (var warning in Model.Warnings)
+                                {
+                                    <li>@warning</li>
+                                }
+                            </ul>
+                        </div>
+                    }
+                    <Widget WidgetZone=@PublicWidgetZones.CheckoutShippingMethodBottom />
+                </EditForm>
+            </div>
+            <div class="section order-summary">
+                <div class="title">
+                    <strong>@T("Checkout.OrderSummary")</strong>
+                </div>
+                <OrderSummary />
+            </div>
+        </div>
+    }
+</div>

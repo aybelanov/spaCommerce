@@ -1,0 +1,80 @@
+﻿@using System.Text.Encodings.Web
+@using Nop.Core.Domain.Media;
+
+@inject ICatalogModelFactory factory
+@inject IJSRuntime js
+@inject NavigationManager uriHelper
+@inject CatalogSettings catalogSettings
+@inject IProductService productService
+@inject IStoreContext storeContext
+@inject IWorkContext workContext
+@inject IProductModelFactory productModelFactory
+@inject MediaSettings mediaSettings 
+
+@code{
+
+
+    private string SearchText { get; set; }
+
+    private SearchBoxModel Model { get; set; }
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult<SearchBoxModel>(factory.PrepareSearchBoxModel());
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+
+        if (Model.AutoCompleteEnabled)
+        {
+            try
+            {
+                await js.InvokeAsync<object>(
+                    "SearchBox.Autocomplete",
+                    Model.SearchTermMinimumLength,
+                    uriHelper.Uri + Url.RouteUrl("ProductSearchAutoComplete").TrimStart('/'),
+                    Model.ShowProductImagesInSearchAutoComplete);
+
+            }
+            catch { }
+        }
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        if (Model.SearchTermMinimumLength > 0 && (SearchText == null || SearchText.Length == 0))
+        {
+            try
+            {
+                await js.InvokeAsync<object>("SearchBox.Submit", T("Search.EnterSearchTerms").Text);
+            }
+            catch { }
+
+            return;
+        }
+
+        var searchQuery = $"q={SearchText}";
+
+        // clear search input
+        SearchText = string.Empty;
+
+        uriHelper.NavigateTo($"/search?{searchQuery}");
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub></LoadingStub>
+}
+else if (Model != null)
+{
+    <EditForm Model="@Model" OnValidSubmit="@OnValidSubmit" id="small-search-box-form">
+        <InputText type="text" @bind-Value="@SearchText" class="search-box-text" id="small-searchterms" autocomplete="off" name="q" placeholder="@T("Search.SearchBox.Tooltip")" />
+        <Widget WidgetZone="@PublicWidgetZones.SearchBoxBeforeSearchButton" />
+        <input type="submit" class="button-1 search-box-button" value="@T("Search.Button")" />
+        <Widget WidgetZone="@PublicWidgetZones.SearchBox" />
+    </EditForm>
+}

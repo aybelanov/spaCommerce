@@ -1,0 +1,115 @@
+﻿@page "/checkout/completed/{orderId:int}"
+@layout _ColumnsOne
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject CustomerSettings customerSettings
+@inject IPaymentService paymentService
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IShoppingCartService shoppingCartService
+@inject IOrderService orderService
+@inject ICheckoutModelFactory checkoutModelFactory
+
+@code{
+
+    private CheckoutCompletedModel Model { get; set; }
+
+    [Parameter] public int orderId { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        if (orderId <= 0)
+        {
+            {
+                await jsService.DisplayBarNotification(new[] { "The order (orderId) is not exist." }, JSMessageType.Error);
+                uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+                return;
+            }
+        }
+
+        //validation
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var order = orderService.GetOrderById(orderId);
+
+        if (order == null)
+        {
+            order = orderService.SearchOrders(storeId: storeContext.CurrentStore.Id,
+            customerId: workContext.CurrentCustomer.Id, pageSize: 1)
+                .FirstOrDefault();
+        }
+        if (order == null || order.Deleted || workContext.CurrentCustomer.Id != order.CustomerId)
+        {
+            await jsService.DisplayBarNotification(new[] { "The order (orderId) is not exist, or deleted, or forbidden." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //disable "order completed" page?
+        if (orderSettings.DisableOrderCompletedPage)
+        {
+            await jsService.DisplayBarNotification(new[] { "The order is comlteted." }, JSMessageType.Succes);
+            uriHelper.NavigateTo(Url.RouteUrl("OrderDetails", new { orderId = order.Id }));
+            return;
+        }
+
+        //model
+        Model = checkoutModelFactory.PrepareCheckoutCompletedModel(order);
+
+        // update cart
+        CommonParams.OnProductAddedToCart(this, new ProductAddedToCartEventArgs() { CartType = ShoppingCartType.ShoppingCart });
+    }
+}
+
+<div class="page checkout-page order-completed-page">
+    @*@if (!Model.OnePageCheckoutEnabled)
+        {
+            @await Component.InvokeAsync("CheckoutProgress", new { step = CheckoutProgressStep.Complete })
+        }*@
+    <div class="page-title">
+        <h1>@T("Checkout.ThankYou")</h1>
+    </div>
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Checkout").Text);
+        //page class
+        Html.AppendPageCssClassParts("html-checkout-page");
+        Html.AppendPageCssClassParts("html-order-completed-page");
+
+        <div class="page-body checkout-data">
+            <Widget WidgetZone="@PublicWidgetZones.CheckoutCompletedTop" AdditionalData="Model" />
+            <div class="section order-completed">
+                <div class="title">
+                    <strong>@T("Checkout.YourOrderHasBeenSuccessfullyProcessed")</strong>
+                </div>
+                <div class="details">
+                    <div class="order-number">
+                        <strong>@T("Checkout.OrderNumber"): @Model.CustomOrderNumber</strong>
+                    </div>
+                    <div class="details-link">
+                        <a href="@Url.RouteUrl("OrderDetails", new { orderID = Model.OrderId })">@T("Checkout.PlacedOrderDetails")</a>
+                    </div>
+                </div>
+                <div class="buttons">
+                    <input type="button" value="@T("Checkout.ThankYou.Continue")" class="button-1 order-completed-continue-button" @onclick="@(e => uriHelper.NavigateTo(Url.RouteUrl("HomePage")))" />
+                    @*<input type="button" value="@T("Checkout.ThankYou.Continue")" class="button-1 order-completed-continue-button" @onclick="@(e => uriHelper.NavigateTo(Url.RouteUrl("OrderDetails", new { orderID = Model.OrderId })))" />*@
+                </div>
+            </div>
+            <Widget WidgetZone="@PublicWidgetZones.CheckoutCompletedBottom" AdditionalData="Model" />
+        </div>
+    }
+</div>

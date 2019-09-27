@@ -1,0 +1,58 @@
+﻿@page "/producttag/all"
+@inject ICatalogModelFactory catalogModelFactory
+
+@code{
+
+    PopularProductTagsModel Model { get; set; }
+
+    protected override Task DataRequest()
+    {
+        Model = catalogModelFactory.PrepareProductTagsAllModel();
+        return base.DataRequest();
+    }
+
+}
+
+@{
+    //title
+    Html.AddTitleParts(T("PageTitle.AllProductTags").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-product-tags-all-page");
+}
+
+@if (needStub)
+{
+    <div class="page product-tags-all-page">
+        <div class="page-title">
+            <h1>@T("Products.Tags.All")</h1>
+        </div>
+        <div class="page-body">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else
+{
+
+    <div class="page product-tags-all-page">
+        <div class="page-title">
+            <h1>@T("Products.Tags.All")</h1>
+        </div>
+        <div class="page-body">
+
+            @if (Model != null && Model.Tags.Count > 0)
+            {
+                <ul class="product-tags-list">
+                    @foreach (var item in Model.Tags)
+                    {
+                        <li>
+                            <a href="@(string.IsNullOrWhiteSpace(item.SeName) ? $"/producttag/{item.Id}/{item.Name}" : $"/{item.SeName}")" class="producttag" style="font-size:@(Model.GetFontSize(item))%;">
+                                @item.Name
+                            </a>
+                        </li>
+                    }
+                </ul>
+            }
+        </div>
+    </div>
+}

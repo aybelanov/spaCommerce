@@ -1,0 +1,156 @@
+﻿@layout _ColumnsOne
+@using Nop.Core
+@using Nop.Core.Domain.Vendors
+@using Nop.Services.Vendors
+@using Nop.Core.Domain.Security
+@using Nop.Core.Domain.Common
+@using Nop.Services.Messages
+@using Nop.Services.Localization
+@using ValidationSummary = Microsoft.AspNetCore.Components.Forms.ValidationSummary
+@inject VendorSettings vendorSettings
+@inject ICommonModelFactory commonModelFactory
+@inject IVendorService vendorService
+@inject NavigationManager uriHelper
+@inject CaptchaSettings captchaSettings
+@inject CommonSettings commonSettings
+@inject IWorkflowMessageService workflowMessageService
+@inject IWorkContext workContext
+@inject ILocalizationService localizationService
+
+
+@code{
+
+    [Parameter] public int VendorId { get; set; }
+
+    protected ContactVendorModel Model = new ContactVendorModel();
+
+    private Recaptcha reCaptcha;
+
+
+    protected override async Task DataRequest()
+    {
+        if (!vendorSettings.AllowCustomersToContactVendors)
+        {
+            uriHelper.NavigateTo(Url.GetPathByRouteValues("HomePage", null));
+            return;
+        }
+        var vendor = vendorService.GetVendorById(VendorId);
+        if (vendor == null || !vendor.Active || vendor.Deleted)
+        {
+            uriHelper.NavigateTo(Url.GetPathByRouteValues("HomePage", null));
+            return;
+        }
+
+        Model = await Task.FromResult<ContactVendorModel>
+    (commonModelFactory.PrepareContactVendorModel(Model, vendor, false));
+    }
+
+
+    protected async Task OnValidAsync(EditContext context)
+    {
+    if (vendorSettings.AllowCustomersToContactVendors)
+    {
+    var vendor = vendorService.GetVendorById(Model.VendorId);
+    if (vendor != null && vendor.Active && !vendor.Deleted)
+    {
+    //validate CAPTCHA
+    if (captchaSettings.Enabled && captchaSettings.ShowOnContactUsPage && await reCaptcha.IsCaptchaValid())
+    {
+    Model = commonModelFactory.PrepareContactVendorModel(Model, vendor, true);
+
+    var subject = commonSettings.SubjectFieldOnContactUsForm ? Model.Subject : null;
+    var body = Nop.Core.Html.HtmlHelper.FormatText(Model.Enquiry, false, true, false, false, false, false);
+
+    workflowMessageService.SendContactVendorMessage(vendor, workContext.WorkingLanguage.Id,
+    Model.Email.Trim(), Model.FullName, subject, body);
+
+    Model.SuccessfullySent = true;
+    Model.Result = localizationService.GetResource("ContactVendor.YourEnquiryHasBeenSent");
+
+    StateHasChanged();
+    }
+    }
+    }
+    }
+    }
+
+
+
+    @{
+
+        //title
+        Html.AddTitleParts(T("PageTitle.ContactVendor", Model.VendorName).Text);
+        //page class
+        Html.AppendPageCssClassParts("html-contact-page");
+    }
+
+    @if (Model == null)
+    {
+        <loadingstub />
+    }
+    else
+    {
+        <div class="page contact-page">
+            <div class="page-title">
+                <h1>@T("PageTitle.ContactVendor", Model.VendorName)</h1>
+            </div>
+            <div class="page-body">
+                <Widget WidgetZone="@PublicWidgetZones.ContactVendorTop" />
+                @if (Model.SuccessfullySent)
+                {
+                    <div class="result">
+                        @Model.Result
+                    </div>
+                }
+                else
+                {
+                    <EditForm Model="@Model" OnValidSubmit="@OnValidAsync">
+                        <FluentValidationValidator />
+                        <ValidationSummary />
+                        <div class="fieldset">
+                            <div class="form-fields">
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.FullName)" postfix=":"></LabelText>
+                                    <InputText @bind-Value="@Model.FullName" placeholder="@T("ContactVendor.FullName.Hint")" class="fullname" />
+                                    <required />
+                                    <ValidationMessage For="@(()=>Model.FullName)"></ValidationMessage>
+                                </div>
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Email)" postfix=":"></LabelText>
+                                    <InputText @bind-Value="@Model.Email" placeholder="@T("ContactVendor.Email.Hint")" class="email" />
+                                    <required />
+                                    <ValidationMessage For="@(()=>Model.Email)"></ValidationMessage>
+                                </div>
+                                @if (Model.SubjectEnabled)
+                                {
+                                    <div class="inputs">
+                                        <LabelText For="@(()=>Model.Subject)" postfix=":"></LabelText>
+                                        <InputText @bind-Value="@Model.Subject" placeholder="@T("ContactVendor.Subject.Hint")" class="subject" />
+                                        <required />
+                                        <ValidationMessage For="@(() => Model.Subject)"></ValidationMessage>
+                                    </div>
+                                }
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Enquiry)" postfix=":"></LabelText>
+                                    <InputTextArea @bind-Value="@Model.Enquiry" placeholder="@T("ContactVendor.Enquiry.Hint")" class="enquiry"></InputTextArea>
+                                    <required />
+                                    <ValidationMessage For="@(()=>Model.Enquiry)"></ValidationMessage>
+                                </div>
+                                @if (Model.DisplayCaptcha)
+                                {
+                                    <div class="captcha-box">
+                                        <Recaptcha @ref="reCaptcha"  />
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="buttons">
+                            <input type="submit" name="send-email" class="button-1 contact-us-button" value="@T("ContactVendor.Button")" />
+                        </div>
+                    </EditForm>
+                }
+                <Widget WidgetZone="@PublicWidgetZones.ContactVendorBottom" />
+            </div>
+        </div>
+    }
+

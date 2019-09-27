@@ -1,0 +1,33 @@
+﻿@inject IJSRuntime jsRuntime
+
+@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("_DeliveryInfo");
+
+        }
+        catch { }
+    }
+}
+
+@if ((Model.FreeShippingNotificationEnabled && Model.IsFreeShipping) || !string.IsNullOrWhiteSpace(Model.DeliveryDate))
+{
+    <div class="delivery">
+        @if (Model.FreeShippingNotificationEnabled && Model.IsFreeShipping)
+        {
+            <div class="free-shipping">@T("Products.FreeShipping")</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(Model.DeliveryDate))
+        {
+            <div class="delivery-date">
+                <span class="label">@T("Products.DeliveryDate"):</span>
+                <span class="value">@Model.DeliveryDate</span>
+            </div>
+        }
+    </div>
+}

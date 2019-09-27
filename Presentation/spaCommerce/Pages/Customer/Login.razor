@@ -1,0 +1,162 @@
+﻿@*@page "/login"
+@page "/login/checkoutasguest"*@
+@layout _ColumnsOne
+@inject IWebHelper webHelper
+@inject NavigationManager uriHelper
+@inject ICustomerModelFactory customerModelFactory
+
+@code{
+
+    private LoginModel Model { get; set; }
+
+    private Recaptcha captcha;
+
+    [CascadingParameter] public EditContext EditContext { get; set; }
+
+    protected override async Task DataRequest()
+    {
+        var currentPath = uriHelper.GetRelativePath();
+        Model = customerModelFactory.PrepareLoginModel(currentPath == "/login/checkoutasguest");
+        if (Model != null) EditContext = new EditContext(Model);
+        await Task.CompletedTask;
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+
+    }
+
+
+    private async Task OnInvalidSubmit(EditContext editContext)
+    {
+
+    }
+
+
+    private async Task OnSubmit(EditContext editContext)
+    {
+
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //Layout = "_Root.Head";
+    //Layout = "_ColumnsOne";
+
+    //title
+    Html.AddTitleParts(T("PageTitle.Login").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-login-page");
+
+    ////register URL with return URL (if specified)
+    //var registerUrl = Url.RouteUrl("Register", null, webHelper.CurrentRequestProtocol);
+    //if (!string.IsNullOrEmpty(this.Context.Request.Query["returnUrl"]))
+    //{
+    //    registerUrl = webHelper.ModifyQueryString(registerUrl, "returnurl", this.Context.Request.Query["returnUrl"]);
+    //}
+
+
+
+    <div class="page login-page">
+        <div class="page-title">
+            <h1>@T("Account.Login.Welcome")</h1>
+        </div>
+        <_ExternalAuthentication_Errors />
+        <div class="page-body">
+            <div class="customer-blocks">
+                @if (Model.CheckoutAsGuest)
+                {
+                    <div class="new-wrapper checkout-as-guest-or-register-block">
+                        <div class="title">
+                            <strong>@T("Account.Login.CheckoutAsGuestOrRegister")</strong>
+                        </div>
+                        <div class="text">
+                            <TopicBlock SystemName="CheckoutAsGuestOrRegister" />
+                        </div>
+                        <div class="buttons">
+                            <input type="button" class="button-1 checkout-as-guest-button" @onclick="@(e => uriHelper.NavigateTo(Url.RouteUrl("Checkout")))" value="@T("Account.Login.CheckoutAsGuest")" />
+                            <input type="button" class="button-1 register-button" @onclick="@(e => uriHelper.NavigateTo(Url.RouteUrl("Register"), true))" value="@T(" Account.Register")" />
+                        </div>
+                    </div>
+                }
+                else
+                {
+                    <div class="new-wrapper register-block">
+                        <div class="title">
+                            <strong>@T("Account.Login.NewCustomer")</strong>
+                        </div>
+                        <div class="text">
+                            @T("Account.Login.NewCustomerText")
+                        </div>
+                        <div class="buttons">
+                            <input type="button" class="button-1 register-button" @onclick="@(e => uriHelper.NavigateTo(Url.RouteUrl("Register"), true))" value="@T(" Account.Register")" />
+                        </div>
+                    </div>
+                }
+                <div class="returning-wrapper fieldset">
+                    @{
+                        //todo redo returnUrl
+                    }
+                    <form Model="Model" method="post" action="@Url.RouteUrl("Login")" OnInvalidSubmit="OnInvalidSubmit" OnValidSubmit="OnValidSubmit">
+                        <CascadingValue Value="@EditContext">
+                            @*<div asp-validation-summary="ModelOnly" class="message-error">@T("Account.Login.Unsuccessful")</div>*@
+                            <ValidationSummary />
+                            <div class="title">
+                                <strong>@T("Account.Login.ReturningCustomer")</strong>
+                            </div>
+                            <div class="form-fields">
+                                @if (Model.UsernamesEnabled)
+                                {
+                                    <div class="inputs">
+                                        <LabelText SpaFor="Username" Postfix=":" />
+                                        <InputText type="text" @bind-Value="Model.Username" class="username" autofocus="autofocus" />
+                                        <ValidationMessage For="@(()=>Model.Username)" />
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="inputs">
+                                        <LabelText SpaFor="Email" Postfix=":"></LabelText>
+                                        <InputText type="email" @bind-Value="Model.Email" class="email" autofocus="autofocus" />
+                                        <ValidationMessage For="@(()=>Model.Email)" />
+                                    </div>
+                                }
+                                <div class="inputs">
+                                    <LabelText SpaFor="Password" PostFix=":"></LabelText>
+                                    <InputText type="password" @bind-Value="Model.Password" class="password" />
+                                    <ValidationMessage For="@(()=>Model.Password)" />
+                                </div>
+                                <div class="inputs reversed">
+                                    <InputCheckbox type="checkbox" @bind-Value="Model.RememberMe" />
+                                    <LabelText SpaFor="RememberMe" />
+                                    <span class="forgot-password">
+                                        <a href="@Url.RouteUrl("PasswordRecovery")">@T("Account.Login.ForgotPassword")</a>
+                                    </span>
+                                </div>
+                                @if (Model.DisplayCaptcha)
+                                {
+                                    <div class="captcha-box">
+                                        <Recaptcha @ref="captcha"  />
+                                    </div>
+                                }
+                            </div>
+                            <div class="buttons">
+                                <input class="button-1 login-button" type="submit" value="@T(" Account.Login.LoginButton")" />
+                            </div>
+                        </CascadingValue>
+                    </form>
+                </div>
+            </div>
+            <div class="external-authentication">
+                <ExternalMethods Arguments="@(new[] { "ExternalAuthentication" })" />
+            </div>
+            <TopicBlock SystemName="LoginRegistrationInfo" />
+        </div>
+    </div>
+}

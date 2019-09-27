@@ -1,0 +1,23 @@
+@using Nop.Core
+@inject Nop.Services.Localization.ILocalizationService localizationService
+@inject IStoreContext storeContext
+@inject IWebHelper webHelper
+@inject IWorkContext workContext
+@inject Nop.Core.Domain.News.NewsSettings _newsSettings
+
+@code {
+
+[Parameter] public int currentCategoryId { get; set; }
+
+[Parameter] public int currentProductId { get; set; }
+
+}
+
+@if (_newsSettings.Enabled || _newsSettings.ShowHeaderRssUrl)
+{
+
+    var link = Url.RouteUrl("NewsRSS", new { languageId = workContext.WorkingLanguage.Id });
+    var storeName = localizationService.GetLocalized(storeContext.CurrentStore, x => x.Name);
+
+    <link href="@link" rel="alternate" type="application/rss+xml" title="@storeName: News" />
+}

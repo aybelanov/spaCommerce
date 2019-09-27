@@ -1,0 +1,175 @@
+﻿@page "/contact"
+@using Nop.Core
+@using Nop.Core.Domain.Security
+@using Nop.Services.Logging
+@using Nop.Services.Localization
+@using Nop.Core.Domain.Common
+@using Nop.Services.Messages
+@layout _ColumnsOne
+@inject IJSRuntime js
+@inject ICommonModelFactory commonModelFactory
+@inject IHttpContextAccessor accessor
+@inject CaptchaSettings captchaSettings
+@inject CommonSettings commonSettings
+@inject IWorkflowMessageService workflowMessageService
+@inject IWorkContext workContext
+@inject ICustomerActivityService customerActivityService
+@inject ILocalizationService localizationService
+@inject IJSService jsService
+
+@code{
+
+    private Recaptcha captcha;
+
+    protected ContactUsModel Model = new ContactUsModel();
+
+    bool needStub2;
+
+    protected override async Task DataRequest()
+    {
+        try
+        {
+            Model = await Task.FromResult<ContactUsModel>(commonModelFactory.PrepareContactUsModel(Model, false));
+        }
+        catch { }
+
+        await base.DataRequest();
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await js.InvokeAsync<object>("YandexMapOffice",
+                "https://api-maps.yandex.ru/services/constructor/1.0/js/?sid=hLZZ8flPK7erpT6IIz2XdFNBCmUVV5Bl&amp;width=100%&amp;height=450&amp;lang=ru_RU&amp;sourceType=constructor",
+                "yandex-map-for-contacts");
+        }
+        catch { }
+    }
+
+
+    protected async Task OnValidSubmit(EditContext context)
+    {
+        await jsService.ShowLoadWaiting();
+        //validate CAPTCHA
+        if (captchaSettings.Enabled && captchaSettings.ShowOnContactUsPage && !await captcha.IsCaptchaValid())
+        {
+            await jsService.DisplayBarNotification(new[] { captchaSettings.GetWrongCaptchaMessage(localizationService) }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+            StateHasChanged();
+            return;
+        }
+
+        await jsService.ResetLoadWaiting();
+        needStub2 = true;
+        StateHasChanged();
+
+        Model = commonModelFactory.PrepareContactUsModel(Model, true);
+
+        var subject = commonSettings.SubjectFieldOnContactUsForm ? Model.Subject : null;
+        var body = Nop.Core.Html.HtmlHelper.FormatText(Model.Enquiry, false, true, false, false, false, false);
+
+        workflowMessageService.SendContactUsMessage(workContext.WorkingLanguage.Id,
+            Model.Email.Trim(), Model.FullName, subject, body);
+
+        Model.SuccessfullySent = true;
+        Model.Result = localizationService.GetResource("ContactUs.YourEnquiryHasBeenSent");
+
+        await jsService.DisplayBarNotification(new[] { Model.Result });
+        needStub2 = false;
+        StateHasChanged();
+
+        //activity log
+        customerActivityService.InsertActivity("PublicStore.ContactUs",
+            localizationService.GetResource("ActivityLog.PublicStore.ContactUs"));
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if(Model!= null)
+{
+    //title
+    Html.AddTitleParts(T("PageTitle.ContactUs").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-contact-page");
+
+    <div class="page contact-page">
+        <div class="page-title">
+            <h1>@T("PageTitle.ContactUs")</h1>
+        </div>
+        <div class="page-body">
+            <div class="topic-block">
+                <div class="topic-block-body">
+                    
+                </div>
+            </div>
+            <TopicBlock SystemName="ContactUs" />
+            <Widget WidgetZone="@PublicWidgetZones.ContactUsTop" />
+            @if (needStub2)
+            {
+                <LoadingStub />
+            }
+            else
+            {
+                @if (Model.SuccessfullySent)
+                {
+                    <div class="result">
+                        @Model.Result
+                    </div>
+                }
+                else
+                {
+                    <EditForm Model="@Model" OnValidSubmit="@OnValidSubmit">
+                        <FluentValidationValidator />
+                        @*<ValidationSummary />*@
+                        <div class="fieldset">
+                            <div class="form-fields">
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.FullName)" Postfix=":" />
+                                    <InputText Id="FullName" @bind-Value="@Model.FullName" class="fullname" placeholder="@T("ContactUs.FullName.Hint")" type="text" />
+                                    <Required />
+                                    <ValidationMessage For="@(() => Model.FullName)" />
+                                </div>
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Email)" Postfix=":" />
+                                    <InputText Id="Email" @bind-Value="@Model.Email" class="email" placeholder="@T("ContactUs.Email.Hint")" type="text" />
+                                    <Required />
+                                    <ValidationMessage For="@(() => Model.Email)" />
+                                </div>
+                                @if (Model.SubjectEnabled)
+                                {
+                                    <div class="inputs">
+                                        <LabelText For="@(()=>Model.Subject)" Postfix=":" />
+                                        <InputText Id="Subject" @bind-Value="@Model.Subject" class="subject" placeholder="@T("ContactUs.Subject.Hint")" type="text" />
+                                        <Required />
+                                        <ValidationMessage For="@(() => Model.Subject)" />
+                                    </div>
+                                }
+                                <div class="inputs">
+                                    <LabelText For="@(()=>Model.Enquiry)" Postfix=":" />
+                                    <InputTextArea Id="Enquiry" @bind-Value="@Model.Enquiry" class="enquiry" placeholder="@T("ContactUs.Enquiry.Hint")" type="text" />
+                                    <Required />
+                                    <ValidationMessage For="@(() => Model.Enquiry)" />
+                                </div>
+                                @if (Model.DisplayCaptcha)
+                                {
+                                    <div class="captcha-box">
+                                        <Recaptcha @ref="@captcha" />
+                                    </div>
+                                }
+                            </div>
+                        </div>
+                        <div class="buttons">
+                            <input type="submit" name="send-email" class="button-1 contact-us-button" value="@T("ContactUs.Button")" />
+                        </div>
+                    </EditForm>
+                }
+            }
+            <Widget WidgetZone="@PublicWidgetZones.ContactUsBottom" />
+        </div>
+    </div>
+}

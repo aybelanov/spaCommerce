@@ -1,0 +1,65 @@
+﻿@inject IAclService aclService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IStoreContext storeContext
+@inject IStoreMappingService storeMappingService
+@inject IWorkContext workContext
+@inject ShoppingCartSettings shoppingCartSettings
+
+@code {
+
+    private IList<ProductOverviewModel> Model { get; set; }
+    [Parameter] public int? ProductThumbPictureSize { get; set; }
+
+    protected override Task DataRequest()
+    {
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        var products = productService.GetCrosssellProductsByShoppingCart(cart, shoppingCartSettings.CrossSellsNumber);
+        //ACL and store mapping
+        products = products.Where(p => aclService.Authorize(p) && storeMappingService.Authorize(p)).ToList();
+        //availability dates
+        products = products.Where(p => productService.ProductIsAvailable(p)).ToList();
+        //visible individually
+        products = products.Where(p => p.VisibleIndividually).ToList();
+
+        if (products.Any())
+        {
+
+            //Cross-sell products are displayed on the shopping cart page.
+            //We know that the entire shopping cart page is not refresh
+            //even if "ShoppingCartSettings.DisplayCartAfterAddingProduct" setting  is enabled.
+            //That's why we force page refresh (redirect) in this case
+            Model = productModelFactory.PrepareProductOverviewModels(products,
+                    productThumbPictureSize: ProductThumbPictureSize, forceRedirectionAfterAddingToCart: true)
+                .ToList();
+        }
+
+        return Task.CompletedTask;
+    }
+
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null && Model.Count > 0)
+{
+    <div class="product-grid cross-sells">
+        <div class="title">
+            <strong>@T("ShoppingCart.CrossSells")</strong>
+        </div>
+        <div class="item-grid">
+            @foreach (var product in Model)
+            {
+                <div class="item-box">
+                    <_ProductBox Model="@product" />
+                </div>
+            }
+        </div>
+    </div>
+}

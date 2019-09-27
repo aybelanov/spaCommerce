@@ -1,0 +1,180 @@
+﻿@page "/productemailafriend/{ProductId:int}"
+@layout _ColumnsOne
+@using Nop.Core
+@using Nop.Core.Domain.Catalog
+@using Nop.Core.Domain.Customers
+@using Nop.Services.Localization
+@using Nop.Services.Messages
+@inject CaptchaSettings captchaSettings
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject NavigationManager uriHelper
+@inject CatalogSettings catalogSettings
+@inject IWorkContext workContext
+@inject ILocalizationService localizationService
+@inject IWorkflowMessageService workflowMessageService
+@inject IJSService jsService
+
+
+@code{
+
+    // TODO implementation
+    ProductEmailAFriendModel Model { get; set; }
+
+    Recaptcha captcha;
+
+    [Parameter] public int ProductId { get; set; }
+
+
+    protected override Task DataRequest()
+    {
+
+        if (ProductId > 0)
+        {
+            var product = productService.GetProductById(ProductId);
+
+            if (product == null || product.Deleted || !product.Published || !catalogSettings.EmailAFriendEnabled)
+            {
+                uriHelper.NavigateTo(Url.RouteUrl("Home"));
+            }
+            else
+            {
+                Model = new ProductEmailAFriendModel();
+                Model = productModelFactory.PrepareProductEmailAFriendModel(Model, product, false);
+            }
+        }
+
+        return Task.CompletedTask;
+    }
+
+
+    protected async Task OnValidSubmit(EditContext context)
+    {
+        await jsService.ShowLoadWaiting();
+        if (ProductId <= 0)
+        {
+            await jsService.DisplayBarNotification(new[] { "The processing product doesn't exist more." }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var product = productService.GetProductById(ProductId);
+        if (product == null || product.Deleted || !product.Published || !catalogSettings.EmailAFriendEnabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "The processing product doesn't exist more or has not been published or email to a friend is banned" }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        if (captchaSettings.Enabled && captchaSettings.ShowOnContactUsPage && !await captcha.IsCaptchaValid())
+        {
+            Model.SuccessfullySent = false;
+            Model.Result = captchaSettings.GetWrongCaptchaMessage(localizationService);
+
+            await jsService.DisplayBarNotification(new[] { captchaSettings.GetWrongCaptchaMessage(localizationService) }, JSMessageType.Error);
+            await jsService.ResetLoadWaiting();
+            StateHasChanged();
+            return;
+        }
+
+        //check whether the current customer is guest and ia allowed to email a friend
+        if (workContext.CurrentCustomer.IsGuest() && !catalogSettings.AllowAnonymousUsersToEmailAFriend)
+        {
+            Model.SuccessfullySent = false;
+            Model.Result = localizationService.GetResource("Products.EmailAFriend.OnlyRegisteredUsers");
+            
+            await jsService.ResetLoadWaiting();
+            StateHasChanged();
+            return;
+        }
+
+        await jsService.ResetLoadWaiting();
+        needStub = true;
+        StateHasChanged();
+
+        //email
+        workflowMessageService.SendProductEmailAFriendMessage(workContext.CurrentCustomer,
+                workContext.WorkingLanguage.Id, product,
+                Model.YourEmailAddress, Model.FriendEmail,
+                Nop.Core.Html.HtmlHelper.FormatText(Model.PersonalMessage, false, true, false, false, false, false));
+
+        Model = productModelFactory.PrepareProductEmailAFriendModel(Model, product, false);
+        Model.SuccessfullySent = true;
+        Model.Result = localizationService.GetResource("Products.EmailAFriend.SuccessfullySent");
+
+        await jsService.DisplayBarNotification(new[] { Model.Result });
+        needStub = false;
+        StateHasChanged();
+    }
+}
+
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //title
+    Html.AddTitleParts(Model.ProductName);
+    //page class
+    Html.AddTitleParts(T("PageTitle.ProductEmailAFriend").Text);
+    Html.AppendPageCssClassParts("html-email-a-friend-page");
+
+    <div class="page email-a-friend-page">
+        <div class="page-title">
+            <h1>@T("Products.EmailAFriend.Title")</h1>
+        </div>
+        <div class="page-body">
+            <div class="title">
+                <h2><a href="@Url.RouteUrl("Product", new { SeName = Model.ProductSeName })" class="product">@Model.ProductName</a></h2>
+            </div>
+            @if (Model.SuccessfullySent)
+            {
+                <div class="result">
+                    @Model.Result
+                </div>
+            }
+            else
+            {
+                <EditForm Model="@Model" OnValidSubmit="@OnValidSubmit">
+                    <FluentValidationValidator />
+                    <ValidationSummary />
+                    <div class="fieldset">
+                        <div class="form-fields">
+                            <div class="inputs">
+                                <LabelText For="@(()=>Model.FriendEmail)" Postfix=":"></LabelText>
+                                <InputText @bind-Value="Model.FriendEmail" type="email" class="friend-email" placeholder="@T("Products.EmailAFriend.FriendEmail.Hint")" />
+                                <Required />
+                                <ValidationMessage For="@(() => Model.FriendEmail)"></ValidationMessage>
+                            </div>
+                            <div class="inputs">
+                                <LabelText For="@(()=>Model.YourEmailAddress)" Postfix=":"></LabelText>
+                                <InputText @bind-Value="Model.YourEmailAddress" type="text" class="your-email" placeholder="@T("Products.EmailAFriend.YourEmailAddress.Hint")" />
+                                <Required />
+                                <ValidationMessage For="@(() => Model.YourEmailAddress)"></ValidationMessage>
+                            </div>
+                            <div class="inputs">
+                                <LabelText For="@(()=>Model.PersonalMessage)" Postfix=":"></LabelText>
+                                <InputTextArea @bind-Value="Model.PersonalMessage" class="your-email" placeholder="@T("Products.EmailAFriend.PersonalMessage.Hint")" />
+                                <Required />
+                                <ValidationMessage For="(() => Model.PersonalMessage)"></ValidationMessage>
+                            </div>
+                            @if (Model.DisplayCaptcha)
+                            {
+                                <div class="captcha-box">
+                                    <Recaptcha @ref="captcha"  />
+                                </div>
+                            }
+                        </div>
+                    </div>
+                    <div class="buttons">
+                        <input type="submit" name="send-email" class="button-1 send-email-a-friend-button" value="@T("Products.EmailAFriend.Button")" />
+                    </div>
+                </EditForm>
+            }
+        </div>
+    </div>
+}

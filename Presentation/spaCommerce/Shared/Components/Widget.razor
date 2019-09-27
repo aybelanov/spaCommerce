@@ -1,0 +1,29 @@
+﻿@inject IWidgetModelFactory widgetModelFactory
+
+@code{
+
+    [Parameter] public string WidgetZone { get; set; }
+
+    [Parameter] public object AdditionalData { get; set; }
+
+    private List<RenderWidgetModel> Model;
+
+
+    protected override Task DataRequest()
+    {
+        Model = widgetModelFactory.PrepareRenderWidgetModel(WidgetZone, AdditionalData);
+        return Task.CompletedTask;
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null && Model.Any())
+{
+    @foreach (var widget in Model)
+    {
+        @RenderComponent(widget.WidgetViewComponentType, widget.WidgetViewComponentArguments)
+    }
+}

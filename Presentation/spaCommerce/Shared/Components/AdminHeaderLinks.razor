@@ -1,0 +1,41 @@
+﻿@using Nop.Web.Framework.Mvc.Filters
+@inject ICommonModelFactory commonModelFactory
+@attribute [AuthorizeAdmin]
+
+@code{
+
+    private AdminHeaderLinksModel Model;
+
+    protected override async Task DataRequest()
+    {
+        Model = commonModelFactory.PrepareAdminHeaderLinksModel();
+        await base.DataRequest();
+    }
+}
+
+<div class="admin-header-links">
+
+    @if (Model == null)
+    {
+        <LoadingStub></LoadingStub>
+    }
+    else if (Model.IsCustomerImpersonated || Model.DisplayAdminLink)
+
+    {
+            @if (Model.IsCustomerImpersonated)
+            {
+                <div class="impersonate">
+                    <span>@string.Format(T("Account.ImpersonatedAs").Text, Model.ImpersonatedCustomerName)</span>
+                    <NavLink href="@Url.RouteUrl("Logout", null)" class="finish-impersonation" title="@T("Account.ImpersonatedAs.Finish.Hint")">@T("Account.ImpersonatedAs.Finish")</NavLink>
+                </div>
+            }
+            @if (Model.DisplayAdminLink)
+            {
+                <NavLink href="@Url.Content("~/Admin")" class="administration">@T("Account.Administration")</NavLink>
+            }
+            @if (!string.IsNullOrEmpty(Model.EditPageUrl))
+            {
+                <NavLink href="@Model.EditPageUrl" class="manage-page">@T("Common.ManagePage")</NavLink>
+            }
+    }
+</div>

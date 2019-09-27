@@ -1,0 +1,83 @@
+﻿@inherits LazyLoadingSpaComponent
+@using Nop.Core.Caching
+@using Nop.Services.Stores
+@using Nop.Core
+@using spaCommerce.Infrastructure.Cache
+@inject IAclService aclService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IStaticCacheManager cacheManager
+@inject IStoreContext storeContext
+@inject IStoreMappingService storeMappingService
+@inject IJSRuntime jsRuntime
+
+@code{
+
+    IList<ProductOverviewModel> Model { get; set; }
+
+    [Parameter] public int ProductId { get; set; }
+
+    [Parameter] public int? ProductThumbPictureSize { get; set; }
+
+    protected override Task DataRequest()
+    {
+        //load and cache report
+        var productIds = cacheManager.Get(string.Format(ModelCacheEventConsumer.PRODUCTS_RELATED_IDS_KEY, ProductId, storeContext.CurrentStore.Id),
+                () => productService.GetRelatedProductsByProductId1(ProductId).Select(x => x.ProductId2).ToArray());
+
+        //load products
+        var products = productService.GetProductsByIds(productIds);
+        //ACL and store mapping
+        products = products.Where(p => aclService.Authorize(p) && storeMappingService.Authorize(p)).ToList();
+        //availability dates
+        products = products.Where(p => productService.ProductIsAvailable(p)).ToList();
+        //visible individually
+        products = products.Where(p => p.VisibleIndividually).ToList();
+
+        if (products.Any())
+        {
+            Model = productModelFactory.PrepareProductOverviewModels(products, true, true, ProductThumbPictureSize).ToList();
+        }
+
+
+        return Task.CompletedTask;
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("GoToPageTop", ".related-products-grid a");
+        }
+        catch { }
+    }
+}
+
+@if (needStub)
+{
+    <div class="related-products-grid product-grid">
+        <div class="title">
+            <strong>@T("Products.RelatedProducts")</strong>
+        </div>
+        <div class="item-grid">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model != null && Model.Count > 0)
+{
+    <div class="related-products-grid product-grid">
+        <div class="title">
+            <strong>@T("Products.RelatedProducts")</strong>
+        </div>
+        <div class="item-grid">
+            @foreach (var item in Model)
+            {
+                <div class="item-box">
+                    <_ProductBox Model="@item" />
+                </div>
+            }
+        </div>
+    </div>
+}

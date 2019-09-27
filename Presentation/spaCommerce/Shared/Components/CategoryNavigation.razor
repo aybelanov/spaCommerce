@@ -1,0 +1,68 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject ICatalogModelFactory factory
+@inject IJSRuntime jsRuntime
+@inject NavigationManager uriHelper
+
+@code{
+
+    private CategoryNavigationModel Model;
+
+
+    protected override Task DataRequest()
+    {
+        try
+        {
+            int selecetedProductId = GetEntityId("product");
+            int selectedCategoryId = GetEntityId("category");
+            Model = factory.PrepareCategoryNavigationModel(selectedCategoryId, selecetedProductId);
+        }
+        catch { }
+
+        return Task.CompletedTask;
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("CategoryNavigation.SetBehavior");
+        }
+        catch { }
+    }
+}
+
+
+<div class="block block-category-navigation">
+    <div class="title">
+        <strong>@T("Categories")</strong>
+    </div>
+    <div class="listbox">
+        <ul class="list top-menu-cat" id="nav">
+            @if (Model == null)
+            {
+                <LoadingStub />
+            }
+            else if (Model.Categories.Count > 0)
+            {
+                @foreach (var category in Model.Categories)
+                {
+                    var categoryLineModel = new CategoryNavigationModel.CategoryLineModel
+                    {
+                        CurrentCategoryId = Model.CurrentCategoryId,
+                        Category = category
+                    };
+                    <_CategoryLine_Navigation Model="@categoryLineModel" />
+                }
+            }
+        </ul>
+    </div>
+</div>
+<style>
+    #nav .unexpand {
+        display: none;
+    }
+        #nav .unexpand.active {
+            display: block;
+        }
+</style>

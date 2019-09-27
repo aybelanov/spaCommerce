@@ -1,0 +1,138 @@
+﻿@page "/customer/CheckGiftCardBalance"
+@using Nop.Core
+@using Nop.Core.Domain.Customers
+@using Nop.Web.Framework.UI;
+@using Nop.Services.Directory
+@using Nop.Services.Catalog
+@inject IWorkContext workContext
+@layout _ColumnsTwo
+@inject IJSRuntime jsRuntime
+@inject CaptchaSettings captchaSettings
+@inject CustomerSettings customerSettings
+@inject NavigationManager uriHelper
+@inject ICustomerModelFactory customerModelFactory
+@inject IJSService jsService
+@inject IGiftCardService giftCardService
+@inject ILocalizationService localizationService
+@inject ICurrencyService currencyService
+@inject IPriceFormatter priceFormatter
+
+
+@code{
+
+    private CheckGiftCardBalanceModel Model { get; set; }
+    Recaptcha recaptcha;
+
+    public RenderFragment LeftSection { get; set; } = _builder =>
+    {
+        _builder.OpenComponent<CustomerNavigation>(0);
+        _builder.AddAttribute(1, "SelectedTabId", (int)CustomerNavigationEnum.Addresses);
+        _builder.CloseComponent();
+    };
+
+
+    protected override async Task DataRequest()
+    {
+        if (!(captchaSettings.Enabled && customerSettings.AllowCustomersToCheckGiftCardBalance))
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("CustomerInfo"));
+            return;
+        }
+
+        Model = customerModelFactory.PrepareCheckGiftCardBalanceModel();
+        await Task.CompletedTask;
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        //validate CAPTCHA
+        if (captchaSettings.Enabled && !(await recaptcha.IsCaptchaValid()))
+        {
+            await jsService.DisplayBarNotification(new[] { captchaSettings.GetWrongCaptchaMessage(localizationService) }, JSMessageType.Error);
+        }
+
+        var giftCard = giftCardService.GetAllGiftCards(giftCardCouponCode: Model.GiftCardCode).FirstOrDefault();
+        if (giftCard != null && giftCardService.IsGiftCardValid(giftCard))
+        {
+            var remainingAmount = currencyService.ConvertFromPrimaryStoreCurrency(giftCardService.GetGiftCardRemainingAmount(giftCard), workContext.WorkingCurrency);
+            Model.Result = priceFormatter.FormatPrice(remainingAmount, true, false);
+        }
+        else
+        {
+            await jsService.DisplayBarNotification(new[] { localizationService.GetResource("CheckGiftCardBalance.GiftCardCouponCode.Invalid") }, JSMessageType.Error);
+        }
+    }
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("CheckGiftCardBalance");
+        }
+        catch { }
+    }
+}
+
+
+@if (needStub)
+{
+<LoadingStub />
+}
+else if (Model != null)
+{
+    var isRegisterCustomer = workContext.CurrentCustomer.IsRegistered();
+    //Layout = isRegisterCustomer ? "_ColumnsTwo" : "_ColumnsOne";
+
+    //title
+    Html.AddTitleParts(T("PageTitle.CheckGiftCardBalance").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-account-page");
+
+<div class="page account-page check-gift-card-balance-page">
+    <div class="page-title">
+        @if (isRegisterCustomer)
+                    {
+        <h1>@T("Account.MyAccount") - @T("PageTitle.CheckGiftCardBalance")</h1>
+}
+                else
+                {
+    <h1>@T("PageTitle.CheckGiftCardBalance")</h1>
+                }
+    </div>
+    <div class="page-body">
+        @if (!string.IsNullOrEmpty(Model.Message))
+                    {
+        <div class="message-error">
+            @Model.Message
+        </div>
+                    }
+        @if (!string.IsNullOrEmpty(Model.Result))
+                    {
+        <div class="result">
+            @string.Format(T("ShoppingCart.Totals.GiftCardInfo.Remaining").Text, Model.Result)
+        </div>
+                    }
+    <EditForm Model="Model" OnValidSubmit="OnValidSubmit" method="post">
+        <FluentValidationValidator />
+        <ValidationSummary />
+        <div class="fieldset">
+            <div class="form-fields">
+                <div class="inputs">
+                    <LabelText For="@(()=>Model.GiftCardCode)" Postfix=":"></LabelText>
+                    <InputText @bind-Value="Model.GiftCardCode" placeholder="@T("ShoppingCart.GiftCardCouponCode.Tooltip")" class="fullname" type="text" />
+                    <Required />
+                    <ValidationMessage For="@(()=>Model.GiftCardCode)"></ValidationMessage>
+                </div>
+                <div class="captcha-box">
+                    <Recaptcha @ref="recaptcha" />
+                </div>
+            </div>
+            <div class="buttons">
+                <input type="submit" name="checkbalancegiftcard" id="checkbalancegiftcard" class="button-1 check-gift-card-balance-button" value="@T("CheckGiftCard.GiftCardCouponCode.Button")" />
+            </div>
+        </div>
+    </EditForm>
+    </div>
+</div>
+}

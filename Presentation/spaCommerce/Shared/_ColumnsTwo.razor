@@ -1,0 +1,24 @@
+﻿@layout _Root
+
+@RenderSection("Breadcrumb")
+    
+<div class="side-2">
+        
+        @RenderSection("left")
+        
+        <Widget WidgetZone="@PublicWidgetZones.LeftSideColumnBefore" />
+        <CategoryNavigation />
+        <Widget WidgetZone="@PublicWidgetZones.LeftSideColumnAfterCategoryNavigation" />
+        <ManufacturerNavigation />
+        <VendorNavigation />
+        <RecentlyViewedProductsBlock ProductThumbPictureSize="64" />
+        <PopularProductTags />
+        <PollBlock SystemKeyWord="LeftColumnPoll" />
+        <Widget WidgetZone="@PublicWidgetZones.LeftSideColumnAfter" />
+
+</div>
+<div class="center-2">
+    <Widget WidgetZone="@PublicWidgetZones.MainColumnBefore" />
+    @Body
+    <Widget WidgetZone="@PublicWidgetZones.MainColumnAfter" />
+</div>

@@ -1,0 +1,56 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject INewsModelFactory factory
+@inject Nop.Core.Domain.News.NewsSettings newsSettings
+
+@code{
+
+    protected HomePageNewsItemsModel Model { get; set; }
+
+    protected override Task DataRequest()
+    {
+        if (newsSettings.Enabled && newsSettings.ShowNewsOnMainPage)
+        {
+            Model = factory.PrepareHomePageNewsItemsModel();
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+@if (needStub)
+{
+    <div class="news-list-homepage">
+        <div class="title">
+            <strong>@T("News")</strong>
+        </div>
+        <LoadingStub></LoadingStub>
+    </div>
+}
+else if (Model != null && Model.NewsItems.Count > 0)
+{
+    <div class="news-list-homepage">
+        <div class="title">
+            <strong>@T("News")</strong>
+        </div>
+        <div class="news-items">
+            @foreach (var item in Model.NewsItems)
+            {
+                <div class="news-item">
+                    <div class="news-head">
+                        <a class="news-title" href="@Url.RouteUrl("NewsItem", new { SeName = item.SeName })">@item.Title</a>
+                        <span class="news-date">-@item.CreatedOn.ToString("D")</span>
+                    </div>
+                    <div class="news-body">
+                        @((MarkupString)item.Short)
+                    </div>
+                    <div class="buttons">
+                        <a href="@Url.RouteUrl("NewsItem", new { SeName = item.SeName })" class="read-more">@T("News.MoreInfo")</a>
+                    </div>
+                </div>
+            }
+        </div>
+        <div class="view-all">
+            <a href="@Url.RouteUrl("NewsArchive", null)">@T("News.ViewAll")</a>
+        </div>
+    </div>
+}

@@ -1,0 +1,75 @@
+@using System.Collections.Generic
+@using System.Net.Http
+@using System.Text.Json
+
+@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components
+@using Microsoft.AspNetCore.Routing
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Routing
+@using Microsoft.JSInterop
+@using Microsoft.AspNetCore.Mvc.ViewFeatures
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.AspNetCore.Components.Authorization
+
+@using Nop.Core
+@using Nop.Core.Domain.Catalog
+@using Nop.Core.Domain.Customers
+@using Nop.Core.Domain.Orders
+@using Nop.Core.Domain.Security
+@using Nop.Web.Framework.Components
+@using Nop.Web.Framework.Components.Extensions
+@using Nop.Web.Framework.Components.Infrastructure
+@using Nop.Web.Framework.Components.Routing
+@using Nop.Web.Framework.Components.Services
+@using Nop.Web.Framework.Components.UI
+@using Nop.Web.Framework.Server.Components
+@using Nop.Services.Catalog
+@using Nop.Services.Common
+@using Nop.Services.Security
+@using Nop.Services.Stores
+@using Nop.Services.Localization
+@using Nop.Services.Orders
+@using Nop.Services.Messages
+@using Nop.Services.Customers
+@using Nop.Services.Payments
+@using Nop.Services.Configuration
+@using Nop.Web.Framework
+@using Nop.Web.Framework.Extensions
+@using Nop.Web.Framework.Infrastructure
+@using Nop.Web.Framework.Models
+@using Nop.Web.Framework.Security.Captcha
+@using Nop.Web.Framework.Security.Honeypot
+@using Nop.Web.Framework.Themes
+@using Nop.Web.Framework.UI
+
+@using spaCommerce.Shared
+@using spaCommerce.Pages.Topic
+@using spaCommerce.Pages.Common
+
+@using spaCommerce.Extensions
+@using spaCommerce.Shared.Components
+@using spaCommerce.Shared.Tags
+@using spaCommerce.Services
+
+@using spaCommerce.Factories
+@using spaCommerce.Models.Blogs
+@using spaCommerce.Models.Boards
+@using spaCommerce.Models.Catalog
+@using spaCommerce.Models.Checkout
+@using spaCommerce.Models.Cms
+@using spaCommerce.Models.Common
+@using spaCommerce.Models.Customer
+@using spaCommerce.Models.Media
+@using spaCommerce.Models.News
+@using spaCommerce.Models.Newsletter
+@using spaCommerce.Models.Order
+@using spaCommerce.Models.Polls
+@using spaCommerce.Models.PrivateMessages
+@using spaCommerce.Models.Profile
+@using spaCommerce.Models.ShoppingCart
+@using spaCommerce.Models.Topics
+@using spaCommerce.Models.Vendors
+
+@using spaCommerce.Infrastructure

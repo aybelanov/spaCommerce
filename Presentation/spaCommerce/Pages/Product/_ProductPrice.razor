@@ -1,0 +1,128 @@
+﻿@using Nop.Core
+@using Nop.Core.Domain.Tax
+@using Nop.Core.Domain.Directory
+@inject IWorkContext workContext
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+
+@code{
+
+    [CascadingParameter] EditContext EditContext { get; set; }
+
+    [Parameter] public ProductDetailsModel.ProductPriceModel Model { get; set; }
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.CurrencyChanged += OnCurrencyChanged;
+            CommonParams.ProductAttributeChanged += OnAttributeChanged;
+        }
+
+        return base.OnInitializedAsync();
+    }
+
+
+    private void OnAttributeChanged(IComponent sender)
+    {
+        StateHasChanged();
+    }
+
+
+    private void OnCurrencyChanged(IComponent sender)
+    {
+        //var mainModel = (ProductDetailsModel)EditContext.Model;
+        //var product = productService.GetProductById(Model.ProductId);
+        //mainModel.ProductPrice = productModelFactory.PrepareProductPriceModel(product);
+        ////Model = productModelFactory.AdjustProductDetailsModel(mainModel).ProductPrice;
+
+        //mainModel.ProductAttributes.AdjustProductDetailsModel(mainModel);
+        Model = ((ProductDetailsModel)EditContext.Model).ProductPrice;
+        StateHasChanged();
+    }
+
+
+    public override void Dispose()
+    {
+        CommonParams.CurrencyChanged -= OnCurrencyChanged;
+        CommonParams.ProductAttributeChanged -= OnAttributeChanged;
+        base.Dispose();
+    }
+}
+
+
+@if (!Model.CustomerEntersPrice)
+{
+    <div class="prices" itemprop="offers" itemscope itemtype="http://schema.org/Offer">
+        @if (Model.CallForPrice)
+        {
+            @*call for price*@
+            <div class="product-price call-for-price">
+                <span>@T("Products.CallForPrice")</span>
+            </div>
+        }
+        else
+        {
+            if (Model.IsRental)
+            {
+                <div class="rental-price">
+                    <label>@T("Products.Price.RentalPrice"):</label>
+                    <span>@Model.RentalPrice</span>
+                </div>
+            }
+            if (!string.IsNullOrWhiteSpace(Model.OldPrice))
+            {
+                @*old price*@
+                <div class="old-product-price">
+                    <label>@T("Products.Price.OldPrice"):</label>
+                    <span>@Model.OldPrice</span>
+                </div>
+            }
+            <div class="@(string.IsNullOrWhiteSpace(Model.PriceWithDiscount) ? "product-price" : "non-discounted-price")">
+                @if (!string.IsNullOrWhiteSpace(Model.OldPrice) || !string.IsNullOrWhiteSpace(Model.PriceWithDiscount))
+                {
+                    @*display "Price:" label if we have old price or discounted one*@
+                    <label>@T("Products.Price"):</label>
+                }
+                @*render price*@
+                <span itemprop=@(string.IsNullOrWhiteSpace(Model.PriceWithDiscount) ? "price" : null)
+                      content="@(string.IsNullOrWhiteSpace(Model.PriceWithDiscount) ? Model.PriceValue.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture) : null)"
+                      class=@(string.IsNullOrWhiteSpace(Model.PriceWithDiscount) ? $"price-value-{Model.ProductId}" : null)>
+                    @((MarkupString)Model.Price)
+                </span>
+            </div>
+            if (!string.IsNullOrWhiteSpace(Model.PriceWithDiscount))
+            {
+                @*discounted price*@
+                <div class="product-price discounted-price">
+                    <label>@T("Products.Price.WithDiscount"):</label>
+                    <span itemprop="price" content="@Model.PriceValue.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)" class="price-value-@(Model.ProductId)">
+                        @((MarkupString)Model.PriceWithDiscount)
+                    </span>
+                </div>
+            }
+            if (!string.IsNullOrEmpty(Model.BasePricePAngV))
+            {
+                <div class="base-price-pangv">
+                    @Model.BasePricePAngV
+                </div>
+            }
+            if (Model.DisplayTaxShippingInfo)
+            {
+                var inclTax = workContext.TaxDisplayType == TaxDisplayType.IncludingTax;
+                //tax info is already included in the price (incl/excl tax). that's why we display only shipping info here
+                //of course, you can modify appropriate locales to include VAT info there
+                <div class="tax-shipping-info">
+                    @T(inclTax ? "Products.Price.TaxShipping.InclTax" : "Products.Price.TaxShipping.ExclTax", Url.RouteUrl("Topic", new { SeName = Html.GetTopicSeName("shippinginfo") }))
+                </div>
+            }
+            if (!string.IsNullOrEmpty(Model.CurrencyCode))
+            {
+                <meta itemprop="priceCurrency" content="@Model.CurrencyCode" />
+            }
+            <meta itemprop="availability" content="in stock" />
+            <meta itemprop="condition" content="new" />
+        }
+    </div>
+}

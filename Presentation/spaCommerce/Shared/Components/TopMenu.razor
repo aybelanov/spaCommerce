@@ -1,0 +1,135 @@
+﻿@inherits SpaComponent
+@inject ICatalogModelFactory catalogModelFactory
+@inject IJSRuntime jsRuntime
+
+@code{
+
+    private TopMenuModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        try
+        {
+            Model = await Task.FromResult<TopMenuModel>(catalogModelFactory.PrepareTopMenuModel());
+        }
+        catch { }
+
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("TopMenuExpander");
+        }
+        catch { }
+    }
+}
+
+
+@if (needStub)
+{
+    <LoadingStub></LoadingStub>
+}
+else
+{
+    <ul class="top-menu">
+        <Widget WidgetZone="@PublicWidgetZones.HeaderMenuBefore" />
+        @if (Model.DisplayHomePageMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("HomePage")" class="home-icon" Match="NavLinkMatch.All">&nbsp;</NavLink></li>
+        }
+        @{
+            var rootCategories = Model.Categories.Where(x => x.IncludeInTopMenu).ToList();
+        }
+        @foreach (var category in rootCategories)
+        {
+            var categoryLineModel = new TopMenuModel.CategoryLineModel
+            {
+                Category = category
+            };
+            <_CategoryLineTopMenu Model="@categoryLineModel" />
+        }
+        @foreach (var topic in Model.Topics)
+        {
+            <li><NavLink href="@Url.RouteUrl("Topic", new { SeName = topic.SeName })">@topic.Name</NavLink></li>
+        }
+        @if (Model.NewProductsEnabled && Model.DisplayNewProductsMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("NewProducts")">@T("Products.NewProducts")</NavLink></li>
+        }
+        @if (Model.DisplayProductSearchMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("ProductSearch")">@T("Search")</NavLink></li>
+        }
+        @if (Model.DisplayCustomerInfoMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("CustomerInfo")">@T("Account.MyAccount")</NavLink></li>
+        }
+        @if (Model.BlogEnabled && Model.DisplayBlogMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("Blog")">@T("Blog")</NavLink></li>
+        }
+        @if (Model.ForumEnabled && Model.DisplayForumsMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("Boards")">@T("Forum.Forums")</NavLink></li>
+        }
+        @if (Model.DisplayContactUsMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("ContactUs")">@T("ContactUs")</NavLink></li>
+        }
+        <Widget WidgetZone="@PublicWidgetZones.HeaderMenuAfter" />
+    </ul>
+
+    var rootCategoriesResponsive = Model.Categories.ToList();
+    //name it "Categories" if we have only categories. Otherwise, "Menu"
+    var responsiveMenuTitle = Model.HasOnlyCategories ? T("Categories") : T("Menu");
+    <div class="menu-toggle"><span class="menu-custom-icon">&nbsp;</span><span class="menu-custom-header">@responsiveMenuTitle</span></div>
+    <ul class="top-menu mobile">
+        <Widget WidgetZone="@PublicWidgetZones.MobHeaderMenuBefore" />
+        @if (Model.DisplayHomePageMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("HomePage")">@T("HomePage")</NavLink></li>
+        }
+        @foreach (var category in rootCategoriesResponsive)
+        {
+            var categoryLineModel = new TopMenuModel.CategoryLineModel
+            {
+                Category = category,
+                ResponsiveMobileMenu = true
+            };
+            <_CategoryLineTopMenu Model="@categoryLineModel" />
+        }
+        @foreach (var topic in Model.Topics)
+        {
+            <li><NavLink href="@Url.RouteUrl("Topic", new { SeName = topic.SeName })">@topic.Name</NavLink></li>
+        }
+        @if (Model.NewProductsEnabled && Model.DisplayNewProductsMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("NewProducts")">@T("Products.NewProducts")</NavLink></li>
+        }
+        @if (Model.DisplayProductSearchMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("ProductSearch")">@T("Search")</NavLink></li>
+        }
+        @if (Model.DisplayCustomerInfoMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("CustomerInfo")">@T("Account.MyAccount")</NavLink></li>
+        }
+        @if (Model.BlogEnabled && Model.DisplayBlogMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("Blog")">@T("Blog")</NavLink></li>
+        }
+        @if (Model.ForumEnabled && Model.DisplayForumsMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("Boards")">@T("Forum.Forums")</NavLink></li>
+        }
+        @if (Model.DisplayContactUsMenuItem)
+        {
+            <li><NavLink href="@Url.RouteUrl("ContactUs")">@T("ContactUs")</NavLink></li>
+        }
+        <Widget WidgetZone="@PublicWidgetZones.MobHeaderMenuAfter" />
+    </ul>
+}

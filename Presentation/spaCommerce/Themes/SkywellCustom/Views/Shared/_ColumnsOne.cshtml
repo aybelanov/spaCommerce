@@ -1,0 +1,17 @@
+﻿@{
+    Layout = "_Root";
+}
+@if (IsSectionDefined("Breadcrumb"))
+{
+    @section Breadcrumb {
+        @RenderSection("Breadcrumb")
+    }
+}
+<div class="center-1">
+    @(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { WidgetZone = PublicWidgetZones.MainColumnBefore }))
+    @RenderBody()
+    @(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { WidgetZone = PublicWidgetZones.MainColumnAfter }))
+</div>
+<script asp-location="Footer">
+        AjaxCart.init(false, '.header-links .cart-qty', '.header-links .wishlist-qty', '#flyout-cart');
+</script>

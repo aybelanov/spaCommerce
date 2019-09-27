@@ -1,0 +1,68 @@
+﻿@page "/customer/useragreement/{orderItemId:guid}"
+@layout _ColumnsOne
+@inject IJSRuntime jsRuntime
+@inject ICustomerModelFactory customerModelFactory
+@inject NavigationManager uriHelper
+@inject IOrderService orderService
+
+@code{
+    private UserAgreementModel Model { get; set; }
+    [Parameter] public Guid orderItemId { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        var orderItem = orderService.GetOrderItemByGuid(orderItemId);
+        if (orderItem == null)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var product = orderItem.Product;
+        if (product == null || !product.HasUserAgreement)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        Model = customerModelFactory.PrepareUserAgreementModel(orderItem, product);
+        await Task.CompletedTask;
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("UserAgreement");
+        }
+        catch { }
+    }
+
+}
+
+@if (needStub)
+{
+    <LoadingStub />
+}
+else if (Model != null)
+{
+    //page class
+    Html.AppendPageCssClassParts("html-user-agreement-page");
+
+    <div class="page user-agreement-page">
+        <div class="page-title">
+            <h1>@T("DownloadableProducts.UserAgreement")</h1>
+        </div>
+        <div class="page-body">
+            <div class="terms-of-agreement">
+                <input id="agreement-agree" type="checkbox" value="@T("DownloadableProducts.IAgree")" />
+                @((MarkupString)Model.UserAgreementText)
+            </div>
+            <div class="buttons">
+                <input type="submit" id="continue-downloading" class="button-1 user-agreement-button" value="@T("Common.Continue")" onclick="setLocation('@Url.RouteUrl("GetDownload", new { orderItemId = Model.OrderItemGuid, agree = true })')" />
+            </div>
+        </div>
+    </div>
+}

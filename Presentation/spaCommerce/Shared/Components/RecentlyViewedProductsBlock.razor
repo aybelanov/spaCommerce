@@ -1,0 +1,112 @@
+﻿@inherits SpaGenericPageComponent
+@using Nop.Core.Domain.Catalog
+@inject CatalogSettings catalogSettings
+@inject IAclService aclService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IRecentlyViewedProductsComponentService recentlyViewedProductsServiceJS
+@inject IStoreMappingService storeMappingService
+@inject IJSRuntime jsRuntime
+
+@code{
+
+    private List<ProductOverviewModel> Model;
+
+    [Parameter] public int? ProductThumbPictureSize { get; set; }
+
+    [Parameter] public bool? PreparePriceModel { get; set; }
+
+    protected override async Task OnLocationChanged(object sender, LocationChangedEventArgs args)
+    {
+        var handler = CommonParams.Router.GetHandler();
+        var previousHandler = CommonParams.Router.GetPreviousHandler();
+        var productTemplate = typeof(spaCommerce.Pages.Product.ProductTemplate);
+
+        if (previousHandler.Equals(productTemplate))
+        {
+            //needStub = true;
+            //StateHasChanged();
+
+            await DataRequest();
+            needStub = false;
+            StateHasChanged();
+        }
+    }
+
+
+    protected override async Task DataRequest()
+    {
+        if (catalogSettings.RecentlyViewedProductsEnabled)
+        {
+            var preparePictureModel = ProductThumbPictureSize.HasValue;
+            var products = await recentlyViewedProductsServiceJS.GetRecentlyViewedProducts(catalogSettings.RecentlyViewedProductsNumber);
+
+            //ACL and store mapping
+            products = products.Where(p => aclService.Authorize(p) && storeMappingService.Authorize(p)).ToList();
+            //availability dates
+            products = products.Where(p => productService.ProductIsAvailable(p)).ToList();
+
+            if (products.Any())
+            {
+
+                //prepare model
+                Model = new List<ProductOverviewModel>();
+                Model.AddRange(productModelFactory.PrepareProductOverviewModels(products,
+                    PreparePriceModel.GetValueOrDefault(),
+                    preparePictureModel,
+                    ProductThumbPictureSize));
+            }
+        }
+
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("AdditionNavigation.SetBehavior", ".block.block-recently-viewed-products");
+        }
+        catch { }
+    }
+}
+
+
+@if (needStub)
+{
+    <div class="block block-recently-viewed-products">
+        <div class="title">
+            <strong>@T("Products.RecentlyViewedProducts")</strong>
+        </div>
+        <div class="listbox">
+            <ul class="list">
+                <LoadingStub></LoadingStub>
+            </ul>
+        </div>
+    </div>
+}
+else if (Model != null && Model.Count > 0)
+{
+    <div class="block block-recently-viewed-products">
+        <div class="title">
+            <strong>@T("Products.RecentlyViewedProducts")</strong>
+        </div>
+        <div class="listbox">
+            <ul class="list">
+                @for (var i = 0; i < Model.Count; i++)
+                {
+                    var product = Model[i];
+                    <li class='@(i== Model.Count - 1 ? "last" : null)'>
+                        @if (!string.IsNullOrEmpty(product.DefaultPictureModel.ImageUrl))
+                        {
+                            <a class="product-picture" href="@Url.RouteUrl("Product", new { SeName = product.SeName })" title="@product.DefaultPictureModel.Title">
+                                <img alt="@product.DefaultPictureModel.AlternateText" src="@product.DefaultPictureModel.ImageUrl" title="@product.DefaultPictureModel.Title" />
+                            </a>
+                        }
+                        <a class="product-name" href="@Url.RouteUrl("Product", new { SeName = product.SeName })">@product.Name</a>
+                    </li>
+                }
+            </ul>
+        </div>
+    </div>
+}

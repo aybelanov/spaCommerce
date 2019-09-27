@@ -1,0 +1,165 @@
+﻿@inherits LazyLoadingSpaComponent
+@using Nop.Core.Domain.Orders
+@using Nop.Services.Security
+@inject IShoppingCartModelFactory factory
+@inject IJSRuntime jsRuntime
+@inject ShoppingCartSettings shoppingCartSettings
+@inject IPermissionService permissionService
+@inject NavigationManager uriHelper
+
+@code{
+
+    private MiniShoppingCartModel Model;
+
+    bool needStub2;
+
+
+    protected override Task OnInitializedAsync()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAddedToCart += ProductAddedToCart;
+            CommonParams.CurrencyChanged += OnCurrencyChanged;
+        }
+
+        return base.OnInitializedAsync();
+    }
+
+
+    private async void OnCurrencyChanged(IComponent sender)
+    {
+        needStub = true;
+        StateHasChanged();
+        await DataRequest();
+        needStub = false;
+        StateHasChanged();
+    }
+
+
+    protected override Task DataRequest()
+    {
+        Model = factory.PrepareMiniShoppingCartModel();
+        return Task.CompletedTask;
+    }
+
+
+    private void ProductAddedToCart(IComponent sender, ProductAddedToCartEventArgs args)
+    {
+        if (args.CartType == ShoppingCartType.ShoppingCart)
+        {
+            needStub2 = true;
+            StateHasChanged();
+
+            Model = factory.PrepareMiniShoppingCartModel();
+
+            needStub2 = false;
+            StateHasChanged();
+        }
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeVoidAsync("FlyoutShoppingCart");
+        }
+        catch { }
+    }
+
+
+    private Task ToCheckout(MouseEventArgs e)
+    {
+        if (Model.AnonymousCheckoutAllowed && Model.CurrentCustomerIsGuest)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("LoginCheckoutAsGuest", new { returnUrl = Url.RouteUrl("ShoppingCart", null) }), true);
+        }
+        else
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("Checkout", null));
+        }
+
+        return Task.CompletedTask;
+    }
+
+
+    public override void Dispose()
+    {
+        if (CommonParams != null)
+        {
+            CommonParams.ProductAddedToCart -= ProductAddedToCart;
+            CommonParams.CurrencyChanged -= OnCurrencyChanged;
+        }
+
+        base.Dispose();
+    }
+}
+
+
+@if (shoppingCartSettings.MiniShoppingCartEnabled && permissionService.Authorize(StandardPermissionProvider.EnableShoppingCart))
+{
+    <div id="flyout-cart" class="flyout-cart">
+        <div class="mini-shopping-cart">
+            @if (needStub || needStub2)
+            {
+                <LoadingStub>shopping card</LoadingStub>
+            }
+            else if (Model != null)
+            {
+                <div class="count">
+                    @if (Model.TotalProducts == 0)
+                    {
+                        @T("ShoppingCart.Mini.NoItems")
+                    }
+                    else
+                    {
+                        @((MarkupString)string.Format(T("ShoppingCart.Mini.ItemsText").Text, $"<a href=\"{Url.RouteUrl("ShoppingCart", null)}\">{string.Format(T("ShoppingCart.Mini.Items").Text, Model.TotalProducts)}</a>"))
+                    }
+                </div>
+                @if (Model.TotalProducts > 0)
+                {
+                    <div class="items">
+                        @for (var i = 0; i < Model.Items.Count; i++)
+                        {
+                            var item = Model.Items[i];
+                            <div class="item @(i == 0 ? "first" : null)">
+                                @if (Model.ShowProductImages)
+                                {
+                                    <div class="picture">
+                                        <a href="@Url.RouteUrl("Product", new { SeName = item.ProductSeName })" title="@item.Picture.Title">
+                                            <img alt="@item.Picture.AlternateText" src="@item.Picture.ImageUrl" title="@item.Picture.Title" />
+                                        </a>
+                                    </div>
+                                }
+                                <div class="product">
+                                    <div class="name">
+                                        <a href="@Url.RouteUrl("Product", new { SeName = item.ProductSeName })">@item.ProductName</a>
+                                    </div>
+                                    @if (!string.IsNullOrEmpty(item.AttributeInfo))
+                                    {
+                                        <div class="attributes">
+                                            @((MarkupString)item.AttributeInfo)
+                                        </div>
+                                    }
+                                    <div class="price">@T("ShoppingCart.Mini.UnitPrice"): <span>@item.UnitPrice</span></div>
+                                    <div class="quantity">@T("ShoppingCart.Mini.Quantity"): <span>@item.Quantity</span></div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                    <div class="totals">@T("ShoppingCart.Totals.SubTotal"): <strong>@Model.SubTotal</strong></div>
+                    <div class="buttons">
+                        @if (Model.DisplayShoppingCartButton)
+                        {
+                            <input type="button" value="@T("ShoppingCart.Mini.ViewCart")" class="button-1 cart-button" @onclick="@(e => uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart", null)))" />
+                        }
+                        @if (Model.DisplayCheckoutButton)
+                        {
+                            <input type="button" @onclick="ToCheckout" value="@T("Checkout.Button")" class="button-1 checkout-button" />
+                        }
+                    </div>
+                }
+            }
+        </div>
+    </div>
+}

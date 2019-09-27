@@ -1,0 +1,41 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject IPollModelFactory _factory
+
+@code{
+
+    [Parameter] public string SystemKeyWord { get; set; }
+
+    private PollModel Model;
+
+    protected override async Task DataRequest()
+    {
+        if (!string.IsNullOrWhiteSpace(SystemKeyWord))
+        {
+            Model = await Task.FromResult<PollModel>(_factory.PreparePollModelBySystemName(SystemKeyWord));
+        }
+    }
+}
+
+
+@if (needStub)
+{
+    <div class="block block-poll">
+        <div class="title">
+            <strong>@T("Polls.Title")</strong>
+        </div>
+        <div class="listbox">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if(Model != null)
+{
+    <div class="block block-poll">
+        <div class="title">
+            <strong>@T("Polls.Title")</strong>
+        </div>
+        <div class="listbox">
+            <_Poll Model="Model" />
+        </div>
+    </div>
+}

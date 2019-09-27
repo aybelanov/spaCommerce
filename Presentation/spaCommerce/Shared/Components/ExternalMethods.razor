@@ -1,0 +1,23 @@
+﻿@inject IExternalAuthenticationModelFactory externalAuthenticationModelFactory
+
+@code {
+
+    private List<ExternalAuthenticationMethodModel> Model { get; set; }
+
+    [Parameter] public object[] Arguments { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        Model = await Task.FromResult(externalAuthenticationModelFactory.PrepareExternalMethodsModel());
+    }
+}
+
+@if (Model.Any())
+{
+    <div class="title">@T("Account.AssociatedExternalAuth.Or")</div>
+}
+@foreach (var authenticationMethod in Model)
+{
+    @RenderComponent(authenticationMethod.ViewComponentType);
+}

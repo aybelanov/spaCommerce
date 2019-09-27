@@ -1,0 +1,25 @@
+﻿@inject IJSRuntime jsRuntime
+
+@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("BackInStockSubscriptionScript",
+                Model.Id, Url.RouteUrl("BackInStockSubscribePopup", new { productId = Model.Id }),
+                T("BackInStockSubscriptions.NotifyMeWhenAvailable"));
+        }
+        catch { }
+    }
+
+}
+
+@if (Model.DisplayBackInStockSubscription)
+{
+    <div class="back-in-stock-subscription">
+        <input type="button" id="back-in-stock-subscribe-@Model.Id" class="button-2 subscribe-button" value="@T("BackInStockSubscriptions.NotifyMeWhenAvailable")" />
+    </div>
+}

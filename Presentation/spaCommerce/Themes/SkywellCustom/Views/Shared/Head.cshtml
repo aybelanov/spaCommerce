@@ -1,0 +1,139 @@
+﻿@using Nop.Core
+@using Nop.Services.Helpers
+@using Nop.Web.Framework.UI
+@using Microsoft.AspNetCore.Hosting
+@using Nop.Core.Domain
+@using StackExchange.Profiling
+@using Nop.Core.Domain.Common
+@using Nop.Core.Domain.Seo
+@using Nop.Services.Events
+@using Nop.Services.Security
+@using Nop.Web.Framework.Events
+@using Microsoft.Extensions.Hosting
+@using Nop.Web.Framework.Components.Infrastructure
+@inject IWorkContext workContext
+@inject IThemeContext themeContext
+@inject IUserAgentHelper userAgentHelper
+@inject IWebHostEnvironment hostEnvironmet
+@inject CommonSettings commonSettings
+@inject IEventPublisher eventPublisher
+@inject IPermissionService permissionService
+@inject IWorkContext workContext
+@inject SeoSettings seoSettings
+@inject StoreInformationSettings storeInformationSettings
+@inject Nop.Services.Localization.ILanguageService languageService
+
+
+<environment include="Development">
+    @*<link rel="stylesheet" href="css/bootstrap/bootstrap.min.css" />*@
+</environment>
+<environment exclude="Development">
+    @*<link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css"
+        asp-fallback-href="css/bootstrap/bootstrap.min.css"
+        asp-fallback-test-class="sr-only" asp-fallback-test-property="position" asp-fallback-test-value="absolute"
+        crossorigin="anonymous"
+        integrity="sha384-ggOyR0iXCbMQv3Xipma34MD+dH/1fQ784/j6cY/iJTQUOhcWr7x9JvoRxT2MZw1T" />*@
+</environment>
+
+@{
+    var supportRtl = workContext.WorkingLanguage.Rtl;
+    var themeName = themeContext.WorkingThemeName;
+    var isIe8 = userAgentHelper.IsIe8();
+    var exclude = hostEnvironmet.IsDevelopment();
+
+    //*********************************************************************************************************//
+    //                                                                                                         //
+    //                                        FRAMEWORK SCRIPTS                                                //
+    //                                                                                                         //
+    //*********************************************************************************************************//
+
+    //jQuery is the only js file in the head. if we decide to move it to the footer, then ensure that all inline scripts (with jQuery usage) with are also moved to the footer
+    //the issue that it's not possible in some cases (e.g. "Edit address", when Ajax request is made on one-page checkout)
+    Html.AppendScriptParts(ResourceLocation.Head, "~/lib/jquery/jquery-3.3.1.js", excludeFromBundle: exclude);
+
+    Html.AddScriptParts(ResourceLocation.Footer, "~/lib/jquery-validate/jquery.validate-v1.17.0/jquery.validate.js", excludeFromBundle: exclude);
+    Html.AddScriptParts(ResourceLocation.Footer, "~/lib/jquery-validate/jquery.validate.unobtrusive-v3.2.10/jquery.validate.unobtrusive.js", excludeFromBundle: exclude);
+    Html.AddScriptParts(ResourceLocation.Footer, "~/lib/jquery-ui/jquery-ui-1.12.1.custom/jquery-ui.js", excludeFromBundle: exclude);
+    if (commonSettings.JqueryMigrateScriptLoggingActive)
+    {
+        Html.AddScriptParts(ResourceLocation.Footer, "~/lib/jquery-migrate/jquery-migrate-3.0.1.js", excludeFromBundle: exclude);
+    }
+    else
+    {
+        Html.AddScriptParts(ResourceLocation.Footer, "~/lib/jquery-migrate/jquery-migrate-3.0.1.min.js", excludeFromBundle: exclude);
+    }
+
+
+    //*********************************************************************************************************//
+    //                                                                                                         //
+    //                              RESOURCES FROM COMPONENTS AND PLUGINS                                      //
+    //                                                                                                         //
+    //*********************************************************************************************************//
+
+    var pluginResources = Html.GetResourcesFromPlugin();
+    @foreach (var resourceComponent in pluginResources)
+    {
+        @(await Html.RenderComponentAsync(resourceComponent, RenderMode.Static));
+    }
+
+
+    //*********************************************************************************************************//
+    //                                                                                                         //
+    //                                          CUSTOM SCRPIPTS                                                //
+    //                                                                                                         //
+    //*********************************************************************************************************//
+
+    Html.AddScriptParts(ResourceLocation.Footer, "~/js/public.common.js", excludeFromBundle: exclude);
+    Html.AddScriptParts(ResourceLocation.Footer, "~/js/public.ajaxcart.js", excludeFromBundle: exclude);
+
+    if (isIe8)
+    {
+        Html.AddScriptParts(ResourceLocation.Footer, "~/lib/selectivizr.min.js", excludeFromBundle: exclude);
+        Html.AddScriptParts(ResourceLocation.Footer, "~/lib/respond.min.js", excludeFromBundle: exclude);
+    }
+
+    Html.AddScriptParts(ResourceLocation.Footer, "~/lib/magnific-popup/jquery.magnific-popup.js", excludeFromBundle: exclude);
+
+    Html.AddScriptParts(ResourceLocation.Footer, $"~/Themes/{themeName}/Content/js/custom.js", excludeFromBundle: exclude);
+
+
+    //*********************************************************************************************************//
+    //                                                                                                         //
+    //                                              CSS                                                        //
+    //                                                                                                         //
+    //*********************************************************************************************************//
+
+    Html.AddCssFileParts("~/lib/jquery-ui/jquery-ui-1.12.1.custom/jquery-ui.css", excludeFromBundle: exclude);
+
+    Html.AddCssFileParts("~/lib/magnific-popup/magnific-popup.css", excludeFromBundle: exclude);
+
+    if (supportRtl)
+    { Html.AddCssFileParts($"~/Themes/{themeName}/Content/css/styles.rtl.css", excludeFromBundle: exclude); }
+    else
+    { Html.AddCssFileParts($"~/Themes/{themeName}/Content/css/styles.css", excludeFromBundle: exclude); }
+
+    if (isIe8) { Html.AddCssFileParts($"~/Themes/{themeName}/Content/css/ie8.css", excludeFromBundle: exclude); }
+
+    Html.AddCssFileParts($"~/Themes/{themeName}/Content/css/custom.css", excludeFromBundle: exclude);
+
+
+    //*********************************************************************************************************//
+    //                                                                                                         //
+    //                                              OTHERS                                                     //
+    //                                                                                                         //
+    //*********************************************************************************************************//
+
+    //X-UA-Compatible tag
+    if (commonSettings.RenderXuaCompatible)
+    {
+        Html.AppendHeadCustomParts($"<meta http-equiv=\"X-UA-Compatible\" content=\"{commonSettings.XuaCompatibleValue}\"/>");
+    }
+    //custom tag(s);
+    if (!string.IsNullOrEmpty(seoSettings.CustomHeadTags))
+    {
+        Html.AppendHeadCustomParts(seoSettings.CustomHeadTags);
+    }
+
+    //event
+    eventPublisher.Publish(new PageRenderingEvent(this.Html));
+}

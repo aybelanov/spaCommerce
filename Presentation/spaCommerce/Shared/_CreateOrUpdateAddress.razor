@@ -1,0 +1,182 @@
+﻿@inject IJSRuntime jsRuntime
+@inject ICountryModelFactory countryModelFactory
+
+@code{
+
+    [Parameter] public AddressModel Model { get; set; }
+    [CascadingParameter] private EditContext EditContext { get; set; }
+
+    private void OnchangeCountry(ChangeEventArgs e)
+    {
+        if (Model.CountryEnabled && Model.StateProvinceEnabled)
+        {
+            Model.StateProvinceId = null;
+
+            Model.CountryId = int.TryParse(e.Value.ToString(), out int countryId) ? countryId : Model.CountryId;
+
+            Model.AvailableStates = countryModelFactory.GetStatesByCountryId(Model.CountryId.GetValueOrDefault().ToString(), true)
+                .Select(x => new Microsoft.AspNetCore.Mvc.Rendering.SelectListItem() { Text = x.name, Value = x.id.ToString() }).ToList();
+
+            EditContext.Validate();
+        }
+    }
+}
+
+@if (Model != null)
+{
+    <InputNumber @bind-Value="Model.Id" type="hidden" style="display:none;"/>
+    <div class="edit-address">
+        <div class="inputs">
+            <LabelText For="@(()=> Model.FirstName)" Postfix=":" />
+            <InputText type="text" @bind-Value="Model.FirstName" />
+            <Required />
+            <ValidationMessage For="@(() => Model.FirstName)" />
+        </div>
+        <div class="inputs">
+            <LabelText For="@(()=>Model.LastName)" Postfix=":" />
+            <InputText @bind-Value="Model.LastName" type="text" />
+            <Required />
+            <ValidationMessage For="@(() => Model.LastName)" />
+        </div>
+        <div class="inputs">
+            <LabelText For="@(()=>Model.Email)" Postfix=":" />
+            <InputText @bind-Value="Model.Email" type="email" />
+            <Required />
+            <ValidationMessage For="@(() => Model.Email)" />
+        </div>
+        @if (Model.CompanyEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.Company)" Postfix=":" />
+                <InputText @bind-Value="Model.Company" type="text" />
+                @if (Model.CompanyRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.Company)" />
+            </div>
+        }
+        @if (Model.CountryEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.CountryId)" Postfix=":" />
+                <select value="@Model.CountryId" @onchange="OnchangeCountry" >
+                    @foreach (var item in Model.AvailableCountries)
+                    {
+                        <option value="@item.Value" selected="@item.Selected">@item.Text</option>
+                    }
+                </select>
+                <Required />
+                <ValidationMessage For="@(() => Model.CountryId)" />
+            </div>
+        }
+
+        @if (Model.CountryEnabled && Model.StateProvinceEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.StateProvinceId)" Postfix=":" />
+                <select value="@Model.StateProvinceId"  @onchange="@(e =>
+                                                                     {
+                                                                         Model.StateProvinceId = int.TryParse(e.Value.ToString(), out int state) ? (int?)state : null;
+                                                                         EditContext.Validate();
+                                                                     })">
+                    @foreach (var item in Model.AvailableStates)
+                     {
+                        <option value="@item.Value" selected="@item.Selected">@item.Text</option>
+                     }
+                </select>
+                @*<span id="states-loading-progress" style="display: none;" class="please-wait">@T("Common.Wait...")</span>*@
+                <Required />
+                <ValidationMessage For="@(() => Model.StateProvinceId)" />
+            </div>
+        }
+        @if (Model.CountyEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.County)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.County" type="text" />
+                @if (Model.CountyRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.County)" />
+            </div>
+        }
+        @if (Model.CityEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.City)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.City" type="text" />
+                @if (Model.CityRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.City)" />
+            </div>
+        }
+        @if (Model.StreetAddressEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.Address1)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.Address1" type="text" />
+                @if (Model.StreetAddressRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.Address1)" />
+            </div>
+        }
+        @if (Model.StreetAddress2Enabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.Address2)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.Address2" type="text" />
+                @if (Model.StreetAddress2Required)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.Address2)" />
+            </div>
+        }
+        @if (Model.ZipPostalCodeEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.ZipPostalCode)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.ZipPostalCode" type="text" />
+                @if (Model.ZipPostalCodeRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.ZipPostalCode)" />
+            </div>
+        }
+        @if (Model.PhoneEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.PhoneNumber)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.PhoneNumber" type="text" />
+                @if (Model.PhoneRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.PhoneNumber)" />
+            </div>
+        }
+        @if (Model.FaxEnabled)
+        {
+            <div class="inputs">
+                <LabelText For="@(()=>Model.FaxNumber)" Postfix=":"></LabelText>
+                <InputText @bind-Value="Model.FaxNumber" type="text" />
+                @if (Model.FaxRequired)
+                {
+                    <Required />
+                }
+                <ValidationMessage For="@(() => Model.FaxNumber)" />
+            </div>
+        }
+        @if (Model.CustomAddressAttributes.Count > 0)
+        {
+            <_AddressAttributes Model="Model.CustomAddressAttributes" />
+        }
+    </div>
+}

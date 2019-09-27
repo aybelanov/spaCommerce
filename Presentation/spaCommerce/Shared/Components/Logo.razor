@@ -1,0 +1,24 @@
+﻿@inject ICommonModelFactory commonModelFactory
+
+@code{
+
+    private LogoModel Model;
+
+    protected override Task DataRequest()
+    {
+        Model = commonModelFactory.PrepareLogoModel();
+        return Task.CompletedTask;
+    }
+}
+
+@if (Model == null)
+{
+    <LoadingStub></LoadingStub>
+}
+else
+{
+    Model.LogoPath = Url.Content("~/Themes/SkywellCustom/Content/images/logo.svg");
+    <a href="@Url.RouteUrl("HomePage", null)">
+        <img title="" alt="@Model.StoreName" src="@Model.LogoPath">
+    </a>
+}

@@ -1,0 +1,91 @@
+﻿@using Microsoft.AspNetCore.Http
+@using Microsoft.AspNetCore.Mvc.Rendering
+@using Nop.Core.Domain.Localization
+@using Nop.Core
+@using Nop.Services.Localization
+@inject IWebHelper webHelper
+@inject IHttpContextAccessor httpContextAccessor
+@inject ICommonModelFactory factory
+@inject ILanguageService languageService
+@inject IWorkContext workContext
+@inject LocalizationSettings localizationSettings
+@inject NavigationManager uriHelper
+
+@code{
+
+    private LanguageSelectorModel Model;
+
+
+    protected override Task DataRequest()
+    {
+        Model = factory.PrepareLanguageSelectorModel();
+        return Task.CompletedTask;
+    }
+
+
+    private void OnSelectLang(int langId)
+    {
+        Model.CurrentLanguageId = langId;
+
+        var language = languageService.GetLanguageById(langId);
+        if (!language?.Published ?? false)
+            language = workContext.WorkingLanguage;
+
+        // TODO Localized urls and language part in URL
+        if (localizationSettings.SeoFriendlyUrlsForLanguagesEnabled)
+        {
+            ////remove current language code if it's already localized URL
+            //if (returnUrl.IsLocalizedUrl(this.Request.PathBase, true, out Language _))
+            //    returnUrl = returnUrl.RemoveLanguageSeoCodeFromUrl(this.Request.PathBase, true);
+
+            ////        //and add code of passed language
+            ////        returnUrl = returnUrl.AddLanguageSeoCodeToUrl(this.Request.PathBase, true, language);
+        }
+
+        workContext.WorkingLanguage = language;
+
+        uriHelper.UpdatePage(true);
+    }
+}
+
+@if (needStub && Model == null)
+{
+    <div class="language-selector">
+        <LoadingStub></LoadingStub>
+    </div>
+}
+else if (Model != null && Model.AvailableLanguages.Count > 1)
+{
+    <div class="language-selector">
+        @if (Model.UseImages)
+        {
+            <ul class="language-list">
+                @foreach (var lang in Model.AvailableLanguages)
+                {
+                    <li>
+                        <a @onclick="@((e)=> OnSelectLang(lang.Id))" title="@lang.Name">
+                            <img title='@lang.Name' alt='@lang.Name' class='@(lang.Id == Model.CurrentLanguageId ? " selected" : null)'
+                                 src="@Url.Content("~/images/flags/" + lang.FlagImageFileName) " />
+                        </a>
+                    </li>
+                }
+            </ul>
+        }
+        else
+        {
+            var languages = Model.AvailableLanguages.Select(lang => new SelectListItem
+            {
+                Text = lang.Name,
+                Value = lang.Id.ToString(),
+                Selected = lang.Id.Equals(Model.CurrentLanguageId)
+            });
+
+            <select id="customerlanguage" name="customerlanguage" @onchange="@((e)=> OnSelectLang(int.Parse(e.Value.ToString())))">
+                @foreach (var lang in languages)
+                {
+                    <option value="@lang.Value" selected="@lang.Selected">@lang.Text</option>
+                }
+            </select>
+        }
+    </div>
+}

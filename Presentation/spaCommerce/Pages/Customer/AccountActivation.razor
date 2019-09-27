@@ -1,0 +1,76 @@
+﻿@page  "/customer/activation"
+@layout _ColumnsOne
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject NavigationManager uriHelper
+@inject ILocalizationService localizationService
+@inject IWorkContext workContext
+@inject IWorkflowMessageService workflowMessageService
+
+@code{
+
+    private AccountActivationModel Model { get; set; }
+    [Parameter] public string Email { get; set; }
+    [Parameter] public string Token { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        var customer = customerService.GetCustomerByEmail(Email);
+        if (customer == null)
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        var cToken = genericAttributeService.GetAttribute<string>(customer, NopCustomerDefaults.AccountActivationTokenAttribute);
+        if (string.IsNullOrEmpty(cToken))
+        {
+            Model = new AccountActivationModel { Result = localizationService.GetResource("Account.AccountActivation.AlreadyActivated") };
+            return;
+        }
+        if (!cToken.Equals(Token, StringComparison.InvariantCultureIgnoreCase))
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //activate user account
+        customer.Active = true;
+        customerService.UpdateCustomer(customer);
+        genericAttributeService.SaveAttribute(customer, NopCustomerDefaults.AccountActivationTokenAttribute, "");
+        //send welcome message
+        workflowMessageService.SendCustomerWelcomeMessage(customer, workContext.WorkingLanguage.Id);
+
+        Model = new AccountActivationModel
+        {
+            Result = localizationService.GetResource("Account.AccountActivation.Activated")
+        };
+
+        await Task.CompletedTask;
+    }
+}
+
+@if (needStub)
+{
+    <LoadingStub/>
+}
+else if (Model != null)
+{
+
+    //title
+    Html.AddTitleParts(T("PageTitle.AccountActivation").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-account-activation-page");
+
+<div class="page account-activation-page">
+    <div class="page-title">
+        <h1>@T("Account.AccountActivation")</h1>
+    </div>
+    <div class="page-body">
+        <div class="result">
+            @Model.Result
+        </div>
+    </div>
+</div>
+}

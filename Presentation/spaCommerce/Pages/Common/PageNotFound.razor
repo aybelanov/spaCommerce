@@ -1,0 +1,16 @@
+﻿@page "/page-not-found"
+@layout  _ColumnsOne
+@{
+    //title
+    Html.AddTitleParts(T("PageTitle.PageNotFound").Text);
+    //page class
+    Html.AppendPageCssClassParts("html-not-found-page");
+}
+<div class="page not-found-page">
+    <div class="page-title">
+        <h1>@T("PageTitle.PageNotFound")</h1>
+    </div>
+    <div class="page-body">
+        <TopicBlock SystemName="PageNotFound" IsDataLazyLoading="@IsDataLazyLoading" />
+    </div>
+</div>

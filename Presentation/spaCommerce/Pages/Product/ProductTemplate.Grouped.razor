@@ -1,0 +1,133 @@
+﻿@code{
+
+    [Parameter] public ProductDetailsModel Model { get; set; }
+}
+
+<Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsAfterBreadcrumb" />
+<div class="page product-details-page">
+    <div class="page-body">
+        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsTop" />
+        <form asp-route="Product" asp-route-sename="@Model.SeName" method="post" id="product-details-form">
+            <div itemscope itemtype="http://schema.org/Product" data-productid="@Model.Id">
+                <div class="product-essential">
+                    <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsBeforePictures" />
+                    <!--product pictures-->
+                    <_ProductDetailsPictures Model="@Model" />
+                    <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsAfterPictures" />
+                    <div class="overview">
+                        <_Discontinued Model="@Model" />
+                        <div class="product-name">
+                            <h1 itemprop="name">
+                                @Model.Name
+                            </h1>
+                        </div>
+                        @if (!string.IsNullOrEmpty(Model.ShortDescription))
+                        {
+                            <div class="short-description">
+                                @((MarkupString)Model.ShortDescription)
+                            </div>
+                        }
+                        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsOverviewTop" />
+
+                        <!--product reviews-->
+                        <_ProductReviewOverview Model="@Model.ProductReviewOverview" />
+
+                        <!--product manufacturers-->
+                        <_ProductManufacturers Model="@Model.ProductManufacturers" />
+
+                        <!--compare, email a friend-->
+                        <div class="overview-buttons">
+                            <Widget WidgetZone="@PublicWidgetZones.ProductDetailsInsideOverviewButtonsBefore" AdditionalData="@Model.Id" />
+                            <_CompareProductsButton Model="@Model" />
+                            <_ProductEmailAFriendButton Model="@Model" />
+                            <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsInsideOverviewButtonsAfter" />
+                        </div>
+                        <_ShareButton Model="@Model" />
+                        <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsOverviewBottom" />
+                    </div>
+                    @if (!string.IsNullOrEmpty(Model.FullDescription))
+                    {
+                        <div class="full-description" itemprop="description">
+                            @((MarkupString)Model.FullDescription)
+                        </div>
+                    }
+                </div>
+                <Widget AdditionalData="@Model.Id" WidgetZone="@PublicWidgetZones.ProductDetailsBeforeCollateral" />
+                <div class="product-collateral">
+                    <!--associated products-->
+                    <div class="product-variant-list">
+                        @foreach (var variant in Model.AssociatedProducts)
+                        {
+                            <div class="product-variant-line" data-productid="@variant.Id">
+                                @if (!string.IsNullOrWhiteSpace(variant.DefaultPictureModel.ImageUrl))
+                                {
+                                    <div class="variant-picture">
+                                        <img alt="@variant.DefaultPictureModel.AlternateText" src="@variant.DefaultPictureModel.ImageUrl"
+                                             title="@variant.DefaultPictureModel.Title" id="main-product-img-@variant.Id" />
+                                    </div>
+                                }
+                                <div class="variant-overview">
+                                    @if (!string.IsNullOrWhiteSpace(variant.Name))
+                                    {
+                                        <div class="variant-name">
+                                            @variant.Name
+                                        </div>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(variant.ShortDescription))
+                                    {
+                                        <div class="variant-description">
+                                            @((MarkupString)variant.ShortDescription)
+                                        </div>
+                                    }
+                                    <!--availability-->
+                                    <_Availability Model="@variant" />
+
+                                    <!--SKU, MAN, GTIN, vendor-->
+                                    <_SKU_Man_GTIN_Ven Model="@variant" />
+
+                                    <!--delivery-->
+                                    <_DeliveryInfo Model="@variant" />
+
+                                    <!--sample download-->
+                                    <_DownloadSample Model="@variant" />
+
+                                    <!--attributes-->
+                                    <_ProductAttributes Model="@variant" />
+
+                                    <!--gift card-->
+                                    <_GiftCardInfo Model="@variant.GiftCard" />
+
+                                    <!--rental info-->
+                                    <_RentalInfo Model="@variant" />
+
+                                    <!--price & add to cart-->
+                                    <_ProductPrice Model="@variant.ProductPrice" />
+
+                                    <!--price breaks-->
+                                    <_ProductTierPrices Model="@variant.TierPrices" />
+                                    <_AddToCart Model="@variant.AddToCart" />
+
+                                    <!--wishlist-->
+                                    <_AddToWishList Model="@variant.AddToCart" />
+
+                                </div>
+                            </div>
+                        }
+                        @if (Model.AssociatedProducts.Count == 0)
+                        {
+                            <div class="no-associated-products">
+                                @T("Products.NoAssociatedProducts")
+                            </div>
+                        }
+                    </div>
+                    <_ProductSpecifications Model="@Model.ProductSpecifications" />
+                    <_ProductTags Model="@Model.ProductTags" />
+                </div>
+                @*we do not display "also purchased" for grouped products
+                    @await Component.InvokeAsync("ProductsAlsoPurchased", new { productId = Model.Id })*@
+                <RelatedProducts ProductId="@Model.Id" />
+            </div>
+        </form>
+        <Widget WidgetZone="@PublicWidgetZones.ProductDetailsBottom" AdditionalData="@Model.Id" />
+    </div>
+</div>

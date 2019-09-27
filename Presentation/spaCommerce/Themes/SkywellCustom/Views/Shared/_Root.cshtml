@@ -1,0 +1,29 @@
+﻿@{
+    Layout = "_Root.Head";
+}
+@(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { WidgetZone = PublicWidgetZones.BodyStartHtmlTagAfter }))
+@(await Html.RenderComponentAsync<_Notifications>(RenderMode.ServerPrerendered))
+@(await Html.RenderComponentAsync<_JavaScriptDisabledWarning>(RenderMode.Static))
+@(await Html.RenderComponentAsync<_OldInternetExplorerWarning>(RenderMode.Static))
+<div class="master-wrapper-page">
+    @(await Html.RenderComponentAsync<AdminHeaderLinks>(RenderMode.Static))
+    @(await Html.RenderComponentAsync<_Header>(RenderMode.Static))
+    <div class="header-menu">
+        @(await Html.RenderComponentAsync<TopMenu>(RenderMode.Static, new { IsDataLazyLoading = false }))
+    </div>
+    <div class="master-wrapper-content">
+        @(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { widgetZone = PublicWidgetZones.ContentBefore }))
+
+        @if (IsSectionDefined("Breadcrumb"))
+        {
+            @RenderSection("Breadcrumb")
+        }
+        <div class="master-column-wrapper">
+            @RenderBody()
+        </div>
+        @(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { WidgetZone = PublicWidgetZones.ContentAfter }))
+    </div>
+    @(await Html.RenderComponentAsync<Footer>(RenderMode.Static, new { IsDataLazyLoading = false }))
+</div>
+@(await Html.RenderComponentAsync<EuCookieLaw>(RenderMode.Static))
+@(await Html.RenderComponentAsync<Widget>(RenderMode.Static, new { WidgetZone = PublicWidgetZones.BodyEndHtmlTagBefore }))

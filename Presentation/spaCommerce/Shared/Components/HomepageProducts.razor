@@ -1,0 +1,56 @@
+﻿@inherits LazyLoadingSpaComponent
+@inject IAclService aclService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IStoreMappingService storeMappingService
+
+@code{
+
+    protected IList<ProductOverviewModel> Model { get; set; }
+
+    [Parameter] public int? ProductThumbPictureSize { get; set; }
+
+    protected override Task DataRequest()
+    {
+        var products = productService.GetAllProductsDisplayedOnHomePage();
+        //ACL and store mapping
+        products = products.Where(p => aclService.Authorize(p) && storeMappingService.Authorize(p)).ToList();
+        //availability dates
+        products = products.Where(p => productService.ProductIsAvailable(p)).ToList();
+
+        if (products.Any())
+        {
+            Model = productModelFactory.PrepareProductOverviewModels(products, true, true, ProductThumbPictureSize).ToList();
+        }
+
+        return Task.CompletedTask;
+    }
+}
+
+@if (needStub)
+{
+    <div class="product-grid home-page-product-grid">
+        <div class="title">
+            <strong>@T("HomePage.Products")</strong>
+        </div>
+        <div class="item-grid">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model != null && Model.Count > 0)
+{
+    <div class="product-grid home-page-product-grid">
+        <div class="title">
+            <strong>@T("HomePage.Products")</strong>
+        </div>
+        <div class="item-grid">
+            @foreach (var item in Model)
+            {
+                <div class="item-box">
+                    <_ProductBox Model="@item" ProductThumbPictureSize="@ProductThumbPictureSize" />
+                </div>
+            }
+        </div>
+    </div>
+}

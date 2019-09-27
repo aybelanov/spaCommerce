@@ -1,0 +1,98 @@
+﻿@inherits LazyLoadingSpaComponent
+@using Nop.Core
+@using Nop.Core.Caching
+@using Nop.Core.Domain.Catalog
+@using Nop.Services.Catalog
+@using Nop.Services.Orders
+@using Nop.Services.Security
+@using Nop.Services.Stores
+@using spaCommerce.Factories
+@using Nop.Web.Framework.Components
+@using spaCommerce.Infrastructure.Cache
+@inject CatalogSettings catalogSettings
+@inject IAclService aclService
+@inject IOrderReportService orderReportService
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+@inject IStaticCacheManager cacheManager
+@inject IStoreContext storeContext
+@inject IStoreMappingService storeMappingService
+@inject IJSRuntime jsRuntime
+
+@functions{
+
+    IList<ProductOverviewModel> Model { get; set; }
+
+    [Parameter] public int productId { get; set; }
+
+    [Parameter] public int? productThumbPictureSize { get; set; }
+
+    protected override Task DataRequest()
+    {
+        try
+        {
+            if (!catalogSettings.ProductsAlsoPurchasedEnabled)
+            {
+                return Task.CompletedTask;
+            }
+            //load and cache report
+            var productIds = cacheManager.Get(string.Format(ModelCacheEventConsumer.PRODUCTS_ALSO_PURCHASED_IDS_KEY, productId, storeContext.CurrentStore.Id),
+                () => orderReportService.GetAlsoPurchasedProductsIds(storeContext.CurrentStore.Id, productId, catalogSettings.ProductsAlsoPurchasedNumber)
+            );
+
+            //load products
+            var products = productService.GetProductsByIds(productIds);
+            //ACL and store mapping
+            products = products.Where(p => aclService.Authorize(p) && storeMappingService.Authorize(p)).ToList();
+            //availability dates
+            products = products.Where(p => productService.ProductIsAvailable(p)).ToList();
+
+            if (products.Any())
+            {
+                Model = productModelFactory.PrepareProductOverviewModels(products, true, true, productThumbPictureSize).ToList();
+            }
+        }
+        catch { }
+
+        return base.DataRequest();
+    }
+
+
+    protected override async Task OnceOnAfterRenderAsync()
+    {
+        try
+        {
+            await jsRuntime.InvokeAsync<object>("GoToPageTop", ".also-purchased-products-grid a");
+        }
+        catch { }
+
+    }
+}
+
+@if (needStub)
+{
+    <div class="also-purchased-products-grid product-grid">
+        <div class="title">
+            <strong>@T("Products.AlsoPurchased")</strong>
+        </div>
+        <div class="item-grid">
+            <LoadingStub></LoadingStub>
+        </div>
+    </div>
+}
+else if (Model != null && Model.Count > 0)
+{
+    <div class="also-purchased-products-grid product-grid">
+        <div class="title">
+            <strong>@T("Products.AlsoPurchased")</strong>
+        </div>
+        <div class="item-grid">
+            @foreach (var item in Model)
+            {
+                <div class="item-box">
+                    <_ProductBox Model="@item" />
+                </div>
+            }
+        </div>
+    </div>
+}

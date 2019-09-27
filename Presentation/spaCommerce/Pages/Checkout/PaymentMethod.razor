@@ -1,0 +1,244 @@
+﻿@page "/checkout/paymentmethod"
+@layout _ColumnsOne
+
+@inject NavigationManager uriHelper
+@inject OrderSettings orderSettings
+@inject IWorkContext workContext
+@inject IStoreContext storeContext
+@inject IJSService jsService
+@inject ICheckoutModelFactory checkoutModelFactory
+@inject ICustomerService customerService
+@inject IGenericAttributeService genericAttributeService
+@inject IPaymentService paymentService
+@inject IOrderProcessingService orderProcessingService
+@inject Nop.Core.Domain.Payments.PaymentSettings paymentSettings
+@inject Nop.Core.Domain.Common.AddressSettings addressSettings
+@inject Nop.Services.Plugins.IPluginFinder pluginFinder 
+
+@code
+{
+
+    private CheckoutPaymentMethodModel Model { get; set; }
+
+
+    protected override async Task DataRequest()
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //Check whether payment workflow is required
+        //we ignore reward points during cart total calculation
+        var isPaymentWorkflowRequired = orderProcessingService.IsPaymentWorkflowRequired(cart, false);
+        if (!isPaymentWorkflowRequired)
+        {
+            genericAttributeService.SaveAttribute<string>(workContext.CurrentCustomer,
+                NopCustomerDefaults.SelectedPaymentMethodAttribute, null, storeContext.CurrentStore.Id);
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentInfo"));
+            return;
+        }
+
+        //filter by country
+        var filterByCountryId = 0;
+        if (addressSettings.CountryEnabled &&
+            workContext.CurrentCustomer.BillingAddress != null &&
+            workContext.CurrentCustomer.BillingAddress.Country != null)
+        {
+            filterByCountryId = workContext.CurrentCustomer.BillingAddress.Country.Id;
+        }
+
+        //model
+        Model = checkoutModelFactory.PreparePaymentMethodModel(cart, filterByCountryId);
+
+        if (paymentSettings.BypassPaymentMethodSelectionIfOnlyOne &&
+            Model.PaymentMethods.Count == 1 && !Model.DisplayRewardPoints)
+        {
+            //if we have only one payment method and reward points are disabled or the current customer doesn't have any reward points
+            //so customer doesn't have to choose a payment method
+
+            genericAttributeService.SaveAttribute(workContext.CurrentCustomer,
+                NopCustomerDefaults.SelectedPaymentMethodAttribute,
+                Model.PaymentMethods[0].PaymentMethodSystemName,
+                storeContext.CurrentStore.Id);
+
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentInfo"));
+        }
+    }
+
+
+    private async Task OnValidSubmit(EditContext editContext)
+    {
+        //validation
+        if (orderSettings.CheckoutDisabled)
+        {
+            await jsService.DisplayBarNotification(new[] { "Checkout is disabled." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        var cart = workContext.CurrentCustomer.ShoppingCartItems
+            .Where(sci => sci.ShoppingCartType == ShoppingCartType.ShoppingCart)
+            .LimitPerStore(storeContext.CurrentStore.Id)
+            .ToList();
+
+        if (!cart.Any())
+        {
+            uriHelper.NavigateTo(Url.RouteUrl("ShoppingCart"));
+            return;
+        }
+
+        if (workContext.CurrentCustomer.IsGuest() && !orderSettings.AnonymousCheckoutAllowed)
+        {
+            await jsService.DisplayBarNotification(new[] { "Anonymous checkout is not allowed." }, JSMessageType.Error);
+            uriHelper.NavigateTo(Url.RouteUrl("HomePage"));
+            return;
+        }
+
+        //Check whether payment workflow is required
+        var isPaymentWorkflowRequired = orderProcessingService.IsPaymentWorkflowRequired(cart);
+        if (!isPaymentWorkflowRequired)
+        {
+            genericAttributeService.SaveAttribute<string>(workContext.CurrentCustomer,
+                NopCustomerDefaults.SelectedPaymentMethodAttribute, null, storeContext.CurrentStore.Id);
+
+            uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentInfo"));
+            return;
+        }
+        //payment method 
+        var paymentmethod = Model.PaymentMethods.Where(x => x.Selected).FirstOrDefault()?.PaymentMethodSystemName;
+
+        if (string.IsNullOrEmpty(paymentmethod))
+        {
+            await DataRequest();
+            return;
+        }
+
+        var paymentMethodInst = paymentService.LoadPaymentMethodBySystemName(paymentmethod);
+        if (paymentMethodInst == null ||
+            !paymentService.IsPaymentMethodActive(paymentMethodInst) ||
+            !pluginFinder.AuthenticateStore(paymentMethodInst.PluginDescriptor, storeContext.CurrentStore.Id) ||
+            !pluginFinder.AuthorizedForUser(paymentMethodInst.PluginDescriptor, workContext.CurrentCustomer))
+        {
+            await DataRequest();
+            return;
+        }
+
+        //save
+        genericAttributeService.SaveAttribute(workContext.CurrentCustomer,
+            NopCustomerDefaults.SelectedPaymentMethodAttribute, paymentmethod, storeContext.CurrentStore.Id);
+
+        uriHelper.NavigateTo(Url.RouteUrl("CheckoutPaymentInfo"));
+    }
+}
+
+<div class="page checkout-page payment-method-page">
+    <CheckoutProgress Step="@CheckoutProgressStep.Payment" />
+    <div class="page-title">
+        <h1>@T("Checkout.SelectPaymentMethod")</h1>
+    </div>
+    @if (needStub)
+    {
+        <LoadingStub />
+    }
+    else if (Model != null)
+    {
+        //title
+        Html.AddTitleParts(T("PageTitle.Checkout").Text);
+        //page class
+        Html.AppendPageCssClassParts("html-checkout-page");
+        Html.AppendPageCssClassParts("html-payment-method-page");
+
+        <div class="page-body checkout-data">
+            <Widget WidgetZone=@PublicWidgetZones.CheckoutPaymentMethodTop />
+            <div class="section payment-method">
+                <EditForm Model="Model" OnValidSubmit="OnValidSubmit" method="post">
+                    @if (Model.DisplayRewardPoints && Model.PaymentMethods.Count > 0)
+                    {
+                        <div class="use-reward-points">
+                            <InputCheckbox @bind-Value="Model.UseRewardPoints" />
+                            <label>@string.Format(T("Checkout.UseRewardPoints").Text, Model.RewardPointsBalance, Model.RewardPointsAmount)</label>
+                        </div>
+                    }
+                    @if (Model.PaymentMethods.Count > 0)
+                    {
+                        <ul class="method-list" id="payment-method-block" style="display:@(Model.RewardPointsEnoughToPayForOrder ? (Model.UseRewardPoints ? "none;" : "block;") :"block;")">
+                            @for (var i = 0; i < Model.PaymentMethods.Count; i++)
+                            {
+                                var paymentMethod = Model.PaymentMethods[i];
+                                var paymentMethodName = paymentMethod.Name;
+                                if (!string.IsNullOrEmpty(paymentMethod.Fee))
+                                {
+                                    paymentMethodName = T("Checkout.SelectPaymentMethod.MethodAndFee", paymentMethodName, paymentMethod.Fee).Text;
+                                }
+                                <li>
+                                    <div class="method-name">
+                                        @if (!string.IsNullOrEmpty(paymentMethod.LogoUrl))
+                                        {
+                                            <div class="payment-logo">
+                                                <label for="paymentmethod_@(i)">
+                                                    <img src="@paymentMethod.LogoUrl" alt="@paymentMethodName" />
+                                                </label>
+                                            </div>
+                                        }
+                                        <div class="payment-details">
+                                            <input id="paymentmethod_@(i)" type="radio" name="paymentmethod" value="@(paymentMethod.PaymentMethodSystemName)" checked="@paymentMethod.Selected" 
+                                                   @onchange="@(e=>
+                                                                {
+                                                                    Model.PaymentMethods.ToList().ForEach(x => x.Selected = false);
+                                                                    paymentMethod.Selected = true; 
+                                                                })"/>
+
+                                            <label for="paymentmethod_@(i)">@paymentMethodName</label>
+                                            @if (!string.IsNullOrEmpty(paymentMethod.Description))
+                                            {
+                                                <div class="payment-description">@paymentMethod.Description</div>
+                                            }
+                                        </div>
+                                    </div>
+                                </li>
+                            }
+                        </ul>
+                        <div class="buttons">
+                            <input type="submit" name="nextstep" value="@T("Checkout.NextButton")" class="button-1 payment-method-next-step-button" />
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="message-error">
+                            @T("Checkout.NoPaymentMethods")
+                        </div>
+                    }
+                </EditForm>
+            </div>
+            <Widget WidgetZone=@PublicWidgetZones.CheckoutPaymentMethodBottom />
+            <div class="section order-summary">
+                <div class="title">
+                    <strong>@T("Checkout.OrderSummary")</strong>
+                </div>
+                <OrderSummary />
+            </div>
+        </div>
+    }
+</div>

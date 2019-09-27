@@ -1,0 +1,67 @@
+@using Nop.Core.Domain.Common
+@inherits SpaGenericPageComponent
+@inject CommonSettings commonSettings
+@inject IProductModelFactory productModelFactory
+@inject IProductService productService
+
+
+@functions{
+
+    protected ProductDetailsModel.ProductBreadcrumbModel Model { get; set; }
+
+
+    protected override Task DataRequest()
+    {
+        var product = productService.GetProductById(CurrentUrlRecord.EntityId);
+
+        Model = productModelFactory.PrepareProductBreadcrumbModel(product);
+
+        return Task.CompletedTask;
+    }
+}
+
+<div class="breadcrumb">
+    @if (needStub)
+    {
+        <ul itemscope itemtype="http://schema.org/BreadcrumbList">
+            <li>
+                <NavLink href="@Url.RouteUrl("HomePage")" Match="@NavLinkMatch.All" title="@T("Categories.Breadcrumb.Top")">@T("Categories.Breadcrumb.Top")</NavLink>
+                <span class="delimiter">@commonSettings.BreadcrumbDelimiter</span>
+            </li>
+        </ul>
+    }
+    else if (Model != null && Model.Enabled)
+    {
+        <ul itemscope itemtype="http://schema.org/BreadcrumbList">
+            @*@await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.ProductBreadcrumbBefore, additionalData = Model })*@
+            <Widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ProductBreadcrumbBefore" />
+            <li>
+                <NavLink href="@Url.RouteUrl("HomePage")" Match="@NavLinkMatch.All" title="@T("Categories.Breadcrumb.Top")">@T("Categories.Breadcrumb.Top")</NavLink>
+                <span class="delimiter">@commonSettings.BreadcrumbDelimiter</span>
+            </li>
+            @{ int position = 1; }
+            @foreach (var category in Model.CategoryBreadcrumb)
+            {
+                <li itemprop="itemListElement" itemscope itemtype="http://schema.org/ListItem">
+                    <NavLink href="@Url.RouteUrl("Category", new { SeName = category.SeName })" itemprop="item">
+                        <span itemprop="name">@category.Name</span>
+                    </NavLink>
+                    <span class="delimiter">@commonSettings.BreadcrumbDelimiter</span>
+                    <meta itemprop="position" content="@position" />
+                </li>
+                position++;
+            }
+
+            <li itemprop="itemListElement" itemscope itemtype="http://schema.org/ListItem">
+                <strong class="current-item" itemprop="name">@Model.ProductName</strong>
+                <span itemprop="item" itemscope itemtype="http://schema.org/Thing">
+                    <link itemprop="url" href="@Url.RouteUrl("Product", new { SeName = Model.ProductSeName })"/>
+                </span>
+                <meta itemprop="position" content="@position" />
+                @*<strong class="current-item"><a href="@Url.RouteUrl("Product", new { SeName = Model.ProductSeName })">@Model.ProductName</a></strong>*@
+                @*@await Component.InvokeAsync("Widget", new { widgetZone = PublicWidgetZones.ProductBreadcrumbAfter, additionalData = Model })*@
+                <Widget AdditionalData="@Model" WidgetZone="@PublicWidgetZones.ProductBreadcrumbAfter" />
+            </li>
+        </ul>
+    }
+</div>
