@@ -458,7 +458,7 @@ else if (Model != null)
                                         {
                                             if (item.AllowedQuantities.Count > 0)
                                             {
-                                                <select name="itemquantity@(item.Id)" id="itemquantity@(item.Id)" class="qty-dropdown" value="@item.Quantity" @onchange="@(async e => await UpdateCartQuantity(item, e))">
+                                                <select @key="item.Id" name="itemquantity@(item.Id)" id="itemquantity@(item.Id)" class="qty-dropdown" value="@item.Quantity" @onchange="@(async e => await UpdateCartQuantity(item, e))">
                                                     @foreach (var qty in item.AllowedQuantities)
                                                     {
                                                         <option selected="@qty.Selected" value="@qty.Value">@qty.Value</option>
@@ -467,12 +467,12 @@ else if (Model != null)
                                             }
                                             else
                                             {
-                                                <input name="itemquantity@(item.Id)" id="itemquantity@(item.Id)" type="number" value="@item.Quantity" @onchange="@(async e => await UpdateCartQuantity(item, e))" class="qty-input" />
+                                                <input @key="item.Id" name="itemquantity@(item.Id)" id="itemquantity@(item.Id)" type="number" value="@item.Quantity" @onchange="@(async e => await UpdateCartQuantity(item, e))" class="qty-input" />
                                             }
                                         }
                                         else
                                         {
-                                            <span class="product-quantity">@item.Quantity</span>
+                                            <span @key="@item.Id" class="product-quantity">@item.Quantity</span>
                                         }
                                     </td>
                                     <td class="subtotal">

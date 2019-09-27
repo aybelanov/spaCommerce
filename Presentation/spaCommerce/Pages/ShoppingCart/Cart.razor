@@ -76,7 +76,7 @@
     {
         if (CommonParams != null)
         {
-            CommonParams.ProductAddedToCart += OnProductAddedToCart;
+            CommonParams.ProductAddedToCart -= OnProductAddedToCart;
         }
 
         base.Dispose();
